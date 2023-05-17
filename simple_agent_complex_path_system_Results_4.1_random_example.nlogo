@@ -374,8 +374,13 @@ to go
 
     ]
     [
+      ifelse random-walk = true [
+        rt random 360
+        fd 1
+        set route route + 1
+      ]
 
-      let got-route? find-route distance-here-dest ; find a route around firstly
+      [let got-route? find-route distance-here-dest ; find a route around firstly
 
 ;      ifelse speed-here = speed [ show "move >1 steps"
       set find-a-max-patch got-route?
@@ -410,8 +415,11 @@ to go
       ]
 
 
-      facexy destx desty
-  ]]
+        facexy destx desty
+    ]
+  ]
+  ]
+
   tick
 
 end
@@ -782,10 +790,47 @@ to show-agents
   ask people [show-turtle]
 end
 
+to-report calculate-breaks [mylist num-classes]
+  let min-value min mylist
+  let max-value max mylist
+  let interval ((max-value - min-value) / num-classes)
+  let breaks []
+  set num-classes num-classes - 1
+  repeat num-classes [
+    set min-value min-value + interval
+    set breaks lput min-value breaks
+  ]
+  set breaks reverse breaks
+  report breaks
+end
 
 to render-patch
   let render-color [ 15 15 45 45 65 65 95 95 102 102 ]
-  if ht-index >= 2 [
+  let render-color-equal [15 45 65 95 102]
+;  print "patch-value-mean:"
+;  print patch-value-mean
+  ifelse ht-index = 1 [
+    let mylist []
+    ask patches with [route != 0] [set mylist insert-item 0 mylist route ]
+    let class-values-list calculate-breaks mylist 5
+
+;    print "class-values-list:"
+;    print class-values-list
+
+    let is-first? true
+    let color-index 0
+    foreach class-values-list [this-mean ->
+      if is-first? = true [
+        set is-first?  false
+        ask patches with [route >= this-mean ] [set pcolor item color-index render-color-equal]
+        set color-index color-index + 1]
+
+      ask patches with [route < this-mean and route > 0] [set pcolor item color-index render-color-equal]
+      set color-index color-index + 1
+
+  ]]
+
+  [if ht-index >= 2 [
     let is-first? true
     let color-index 0
     foreach patch-value-mean [this-mean ->
@@ -799,7 +844,7 @@ to render-patch
 
     ]
 
-  ]
+  ]]
 
 end
 
@@ -956,7 +1001,7 @@ head-angle-max
 head-angle-max
 0
 180
-89.0
+62.0
 1
 1
 NIL
@@ -982,7 +1027,7 @@ head-distance
 head-distance
 0
 50
-6.7
+12.0
 1
 1
 NIL
@@ -1230,6 +1275,35 @@ NIL
 NIL
 NIL
 1
+
+SWITCH
+14
+387
+140
+420
+random-walk
+random-walk
+0
+1
+-1000
+
+PLOT
+900
+347
+1100
+497
+update-his-routes-plot
+Accumulated affordances
+# of patches
+0.0
+1000.0
+0.0
+4000.0
+true
+false
+"" ""
+PENS
+"default" 1.0 1 -16777216 true "" "if ticks mod 100 = 0 [clear-plot\n  set rv []\n  ;ask patches with [is-building? != true and route != 0] [set rv insert-item 0 rv route ]\n  ask patches with [route != 0] [set rv insert-item 0 rv route ]\nset-plot-x-range min rv max rv\nset-plot-y-range 0 4000\n\nset-histogram-num-bars 10\n\nhistogram rv]"
 
 @#$#@#$#@
 ## WHAT IS IT?
