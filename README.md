@@ -3,6 +3,6 @@ This repository contains the source code for “Simple Agents—Complex Emergent
 
 The project uses NetLogo language with some Python code embedded. It was developed on NetLogo 6.1.1 and may not work properly on lower versions.
 
-The original model for creating desire paths (file: “simple_agent_complex_path_system_Results_4.1_random_example”) and the more complex interface used to validate our model are included. You can find the analysis of this model in section 4.1 and 4.2 of the EPB paper.
+The original model for creating desire paths (file: "simple_agent_complex_path_system_Results_4.1_random_example") and the more complex interface used to validate our model (file: "street_network_emergence_ 3.10_groundtruth_20220127_github") are included. You can find the analysis of this model in section 4.1 and 4.2 of the EPB paper.
 
 Note: Before running the model in NetLogo, please set up the Python environment by specifying a valid python.exe interpreter.
