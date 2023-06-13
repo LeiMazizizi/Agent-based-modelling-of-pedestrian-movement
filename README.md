@@ -1,5 +1,5 @@
 # Agent-based-modelling-of-pedestrian-movement
-This repository contains the source code for “Simple Agents—Complex Emergent Path Systems: Agent-Based Modeling of Pedestrian Movement”, a paper published in Environment and Planning B: Urban Analytics and City Science (10.1177/23998083231184884).
+This repository contains the source code for “Simple Agents—Complex Emergent Path Systems: Agent-Based Modeling of Pedestrian Movement”, a paper published in Environment and Planning B: Urban Analytics and City Science (DOI:10.1177/23998083231184884 /ID:EPB-2022-0445.R3).
 
 The project uses NetLogo language with some Python code embedded. It was developed on NetLogo 6.1.1 and may not work properly on lower versions.
 
