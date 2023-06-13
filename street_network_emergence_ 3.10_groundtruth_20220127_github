@@ -1,0 +1,4547 @@
+breed [builds build]
+breed [people person]
+breed [groundprints groundprint]
+breed [groundlawns groundlawn]
+undirected-link-breed [linkbuilds linkbuild]
+
+breed [patchpages patchpage]
+directed-link-breed [linkpatchpages linkpatchpage]
+
+patches-own [route is-building? my-xorigin my-yorigin pageID is-lawn footprint-in-buffer]
+people-own [destx desty buildwho almost-there? travel-length angle-change prior-angle xcor-backStep ycor-backStep SD-distance original-angle-between-dest memory-last-patch-x memory-last-patch-y find-a-max-patch a-max-patch-x a-max-patch-y]
+builds-own [build-degree frq-visited]
+
+patchpages-own [  rank new-rank ; for the diffusion approach
+  visits ; for the random-surfer approach
+  out-link-list out-link-list-count
+
+]
+
+breed [ city-labels city-label ]
+breed [ country-labels country-label ]
+breed [ country-vertices country-vertex ]
+breed [ river-labels river-label ]
+
+globals [
+  nestxy1
+  nestxy2
+  nestxy3
+  nestxy4
+
+
+  foodxy1
+  foodxy2
+  foodxy3
+  foodxy4
+
+  nest
+  food
+  building-set
+  building-hit-pro ; the probability of an agent's hitting a building
+  rv
+  patch-value-mean
+  last-patch-value-mean
+  second-last-patch-value-mean
+  ht-index
+  CRG-index
+
+  travel-length-list
+  angle-change-list
+  travel-length-difference-list
+
+  saved-building-from-file
+  num-building-fromfile
+  num-portal-fromfile
+
+  num-groundtruthfootprints-fromfile
+  saved-observed-footprints-from-file
+  emergenced-path-on-lawns
+  value-emergenced-path-on-lawns
+
+  total-rank max-rank
+  patch-page-rank-list
+  who-patch-page-rank-list
+
+  people-hit-times
+  people-miss-times
+  hit-ratio
+
+  route-ratio-list
+
+  indicator-frq-degree
+
+  data-envilope
+  hotspots-data
+  building-data
+  street-data
+  portal-data
+
+  feature-building-data
+
+  pcolor-pos-list
+  pcolor-value-list
+
+  buildings-index-in-pcolor-pos-list
+  roads-index-in-pcolor-pos-list
+  side-roads-index-in-pcolor-pos-list
+  barriers-index-in-pcolor-pos-list
+  lawns-index-in-pcolor-pos-list
+  parking-areas-index-in-pcolor-pos-list
+  sidewalks-index-in-pcolor-pos-list
+
+
+  ;temp:
+  saved-lawn-mask-from-file
+  num-groundtruthlawn-fromfile
+  lawn-has-been-loaded
+
+  observed-footprints-buffer0
+  observed-footprints-buffer1
+  observed-footprints-buffer2
+  observed-footprints-buffer4
+  observed-footprints-buffer8
+  observed-footprints-buffer16
+  observed-footprints-buffer32
+  observed-footprints-buffer0_secondmeanvalue
+  observed-footprints-buffer1_secondmeanvalue
+  observed-footprints-buffer2_secondmeanvalue
+  observed-footprints-buffer4_secondmeanvalue
+  observed-footprints-buffer8_secondmeanvalue
+  observed-footprints-buffer16_secondmeanvalue
+  observed-footprints-buffer32_secondmeanvalue
+
+  emergenced-path-on-lawns_secondmeanvalue
+
+]
+
+extensions [
+  gis
+  py
+  nw
+  matrix
+  csv
+  stats
+  bitmap
+] ;; The network extension is used in this model.
+
+to-report travel-diff
+  if length travel-length-difference-list > 0[
+    report (sum travel-length-difference-list / length travel-length-difference-list)]
+end
+to-report travel-diff2
+  report 1
+end
+to my-test
+  let my1 [1 2 3]
+  let my2 [2 3 4]
+
+  show abs my1 - my2
+end
+to python-test
+  py:setup py:python
+  (py:run
+    "import math"
+;    "import csv"
+;    "from numpy import matrix"
+;    "import scipy"
+;    "from skimage.morphology import local_maxima,medial_axis"
+    "mydata=[1,2,3]")
+
+  ;; Transfer data to Netlogo environment:
+  let m py:runresult "[math.factorial(i) for i in range(10)]"
+  let n py:runresult "mydata" ;Not working
+  show n
+
+  ;; Transfer data to Python environment:
+  py:set "xx" [1 2 3]
+  (py:run
+    "x=[_+1 for _ in xx]"
+   )
+  show py:runresult "x"
+end
+
+to-report report_CRG
+
+  set rv []
+  ;ask patches with [is-building? != true and route != 0] [set rv insert-item 0 rv route ]
+  ask patches with [route != 0] [set rv insert-item 0 rv route ]
+;  set rv sort-by > rv
+  ifelse length rv > 0 [
+  py:setup py:python
+  py:set "pixels" rv
+  (py:run
+  "def CRG(data):"
+  "  outp = []  # array of break points"
+  "  def htb_inner(data):"
+  "      data_length = float(len(data))"
+  "      data_mean = sum(data) / data_length"
+  "      head = [_ for _ in data if _ > data_mean]"
+  "      while len(head) > 1 and len(head)/data_length <= 0.40:"
+  "          outp.append(data_mean)"
+  "          return htb_inner(head)"
+  "  htb_inner(data)"
+
+  "  if len(outp)==0:"
+  "      return 0"
+  "  elif len(outp)==1:"
+  "      return outp[0]"
+  "  else:"
+  "      i_length=len(outp)"
+  "      sum_ratio=0.0"
+  "      for _ in range(i_length-1):"
+  "          sum_ratio += outp[i_length-1-_]/outp[i_length-1-_-1]"
+  "      return sum_ratio"
+  "CRG_index=CRG(pixels)"
+   )
+  let here-CRG-index py:runresult "CRG_index"
+  report here-CRG-index
+  ][report 0]
+end
+
+to-report report-ht-index
+  set rv []
+  ;ask patches with [is-building? != true and route != 0] [set rv insert-item 0 rv route ]
+  ask patches with [route != 0] [set rv insert-item 0 rv route ]
+;  set rv sort-by > rv
+  ifelse length rv > 0 [
+  py:setup py:python
+  py:set "pixels" rv
+  (py:run
+    "def htb(data):"
+    "    outp = []  # array of break points"
+    "    def htb_inner(data):"
+    "        data_length = float(len(data))"
+    "        data_mean = sum(data) / data_length"
+    "        head = [_ for _ in data if _ > data_mean]"
+    "        while len(head) > 1 and len(head)/data_length <= 0.40:"
+    "            outp.append(data_mean)"
+    "            return htb_inner(head)"
+    "    htb_inner(data)"
+    "    outp.sort(reverse=True)"
+    "    return len(outp)+1,outp"
+    "ht_index,outp=htb(pixels)"
+  )
+
+;  (py:run
+;    "ht_index=htb(pixels)"
+;  )
+  let here-ht-index py:runresult "ht_index"
+  let here-patch-value-mean py:runresult "outp"
+  set patch-value-mean here-patch-value-mean
+    ifelse length here-patch-value-mean >= 1 [set last-patch-value-mean item (length here-patch-value-mean - 1) here-patch-value-mean][set last-patch-value-mean mean rv]
+    ifelse length here-patch-value-mean >= 2 [set second-last-patch-value-mean item (length here-patch-value-mean - 2) here-patch-value-mean][set last-patch-value-mean mean rv]
+    print last-patch-value-mean
+    print "Hi, mean value"
+    print here-patch-value-mean
+    set value-emergenced-path-on-lawns last-patch-value-mean
+;  set last-patch-value-mean item (length here-patch-value-mean - 1) here-patch-value-mean
+  report here-ht-index
+  ][report 0]
+end
+
+to import-data
+  ; hotspots: polygon; buildings: polygon; portals: points; streets: lines
+
+  if import-vector-data-type = "hotspots"[]
+  if import-vector-data-type = "buildings" [
+    set building-data gis:load-dataset "data/Naringen_buildings.shp"
+    ifelse data-envilope = 0 [set data-envilope (gis:envelope-of building-data) gis:set-world-envelope data-envilope][set data-envilope gis:envelope-union-of data-envilope (gis:envelope-of building-data) gis:set-world-envelope data-envilope]
+
+
+  ]
+  if import-vector-data-type = "portals"[]
+  if import-vector-data-type = "streets"[]
+
+
+
+
+end
+
+to import-raster
+  ; To import raster as pcolor of pathes
+  ;import-pcolors-rgb "scence2_merged_raste_200x2001.bmp"
+;  let mymap bitmap:import "scence2_merged_raster_100x1002.png"
+;  let mymap bitmap:import "rasterPlots_featureToRaster_wider_100x100.png"
+;  let mymap bitmap:import "rasterPlots_featureToRaster.bmp"
+;  let mymap bitmap:import "rasterPlots_featureToRaster.png"
+  let mymap bitmap:import world-plot-path
+
+  let mymap2 bitmap:to-grayscale mymap
+  bitmap:copy-to-pcolors mymap2 false
+
+  read-pcolors
+  reset-pcolors
+end
+
+
+
+to read-pcolors
+  set pcolor-pos-list [[] [] [] [] [] [] []]
+  set pcolor-value-list [-2 -2 -2 -2 -2 -2 -2]
+
+
+  ask patches [ let pos list pxcor pycor
+    let proute item 0 pcolor
+    let cnt 0
+
+    repeat length pcolor-value-list [
+    let tempos item cnt pcolor-pos-list
+      let temval item cnt pcolor-value-list
+;      show "route:"
+;      show temval
+
+
+      ifelse proute = temval [
+;          show cnt
+;          show "tempos:"
+;          show tempos
+;          show pcolor-value-list
+;          show pcolor-pos-list
+        set tempos insert-item 0 tempos pos
+        set pcolor-pos-list replace-item cnt pcolor-pos-list tempos
+        stop
+      ][      if temval = -2 [
+;          show "watch: pcolor-value-list"
+;          show pcolor-value-list
+        set pcolor-value-list replace-item cnt pcolor-value-list proute
+        set tempos insert-item 0 tempos pos
+        set pcolor-pos-list replace-item cnt pcolor-pos-list tempos
+;          show "Afterwatch: pcolor-value-list"
+;          show pcolor-value-list
+        stop]]
+
+    set cnt cnt + 1
+
+    ]
+  ]
+;    foreach pcolor-value-list [
+;      [pvl] -> let tempos position cnt pcolor-pos-list
+;      ifelse pvl = -1 [set pvl proute
+;        set pos insert-item 0 pos list pxcor pycor]
+;      [ifelse pvl = proute [set pos insert-item 0 pos list pxcor pycor  ][ ] ]
+;    set cnt cnt + 1]
+;  ]
+;  show "Here!"
+  show pcolor-value-list
+;  show length item 0 pcolor-pos-list + length item 1 pcolor-pos-list + length item 2 pcolor-pos-list + length item 3 pcolor-pos-list + length item 4 pcolor-pos-list + length item 5 pcolor-pos-list + length item 6 pcolor-pos-list
+;  show pcolor-pos-list
+
+end
+
+to reset-pcolors
+  let sorted-pcolor-value-list sort-by < pcolor-value-list
+  show sorted-pcolor-value-list
+  let cnt 0
+  foreach sorted-pcolor-value-list [x ->
+
+    let pp position x pcolor-value-list
+    let patches-this-value item pp pcolor-pos-list
+
+
+
+    if cnt = 0 [
+      ; Bind with "buildings bar":
+      set pcolor-value-list replace-item pp pcolor-value-list buildings
+      set buildings-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route buildings  set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1 ] ]
+
+    ]
+    if cnt = 1 [
+      ; Bind with "roads bar":
+      set pcolor-value-list replace-item pp pcolor-value-list barriers
+      set roads-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route roads set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    if cnt = 2 [
+      ; Bind with "side-roads bar":
+      set pcolor-value-list replace-item pp pcolor-value-list roads
+      set side-roads-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route side-roads set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    if cnt = 3 [
+      ; Bind with "barriers bar":
+      set pcolor-value-list replace-item pp pcolor-value-list side-roads
+      set barriers-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route barriers set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    if cnt = 4 [
+      ; Bind with "lawns bar":
+      set pcolor-value-list replace-item pp pcolor-value-list lawns
+      set lawns-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route lawns set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    if cnt = 5 [
+      ; Bind with "parking-areas bar":
+      set pcolor-value-list replace-item pp pcolor-value-list parking-areas
+      set parking-areas-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route parking-areas set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    if cnt = 6 [
+      ; Bind with "sidewalks bar":
+      set pcolor-value-list replace-item pp pcolor-value-list sidewalks
+      set sidewalks-index-in-pcolor-pos-list pp
+      foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route sidewalks set pcolor (list route route route) set is-lawn 0 set footprint-in-buffer -1] ]
+
+    ]
+    set cnt cnt + 1
+  ]
+
+  show "updated pcolor-value-list:"
+  show pcolor-value-list
+end
+
+to confirm-difficulty-values
+  let patches-this-value item buildings-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route buildings set pcolor (list route route route) set is-lawn 0] ]
+
+  set patches-this-value item roads-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route roads set pcolor (list route route route) set is-lawn 0] ]
+
+  set patches-this-value item side-roads-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route side-roads set pcolor (list route route route) set is-lawn 0] ]
+
+  set patches-this-value item barriers-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route barriers set pcolor (list route route route) set is-lawn 0] ]
+
+  set patches-this-value item lawns-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route lawns set pcolor (list route route route) set is-lawn 1] ]
+
+  set patches-this-value item parking-areas-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route parking-areas set pcolor (list route route route) set is-lawn 0] ]
+
+  set patches-this-value item sidewalks-index-in-pcolor-pos-list pcolor-pos-list
+  foreach patches-this-value [this-position -> let px item 0 this-position let py item 1 this-position ask patch px py [set route sidewalks set pcolor (list route route route) set is-lawn 0] ]
+
+end
+
+to display-data
+  if import-vector-data-type = "buildings"[
+    ask country-labels [ die ]
+    set feature-building-data gis:feature-list-of building-data
+
+    gis:set-drawing-color white
+    gis:draw building-data 1
+    if label-show
+    [ foreach gis:feature-list-of building-data [ vector-feature ->
+      let centroid gis:location-of gis:centroid-of vector-feature
+      ; centroid will be an empty list if it lies outside the bounds
+      ; of the current NetLogo world, as defined by our current GIS
+      ; coordinate transformation
+      if not empty? centroid
+      [ create-country-labels 1
+        [ set xcor item 0 centroid
+          set ycor item 1 centroid
+          set size 0
+;          set label gis:property-value vector-feature "area"
+        ]
+      ]
+      ]
+    ]
+  ]
+end
+
+to create-cut-buildings
+  if feature-building-data != 0 [
+    let count-h 0
+;    ask builds [ foreach feature-building-data [fbd -> if (gis:contains? fbd self) = false [set count-h count-h + 1 die] ] ]
+    ask builds [ if (gis:contains? feature-building-data self) = false [set count-h count-h + 1 die] ]
+    set building-hit-pro []
+    ask builds [set build-degree count builds set building-hit-pro insert-item 0 building-hit-pro who]
+    show length building-hit-pro
+    ask people [;; set the destx and desty from breed builds
+      if length building-hit-pro != 0 [
+
+        let this-index random length building-hit-pro
+
+
+;        let this-dest builds with [who = item this-index building-hit-pro]
+        let this-dest turtle (item this-index building-hit-pro)
+;        set buildwho item 0 [who] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+        set buildwho [who] of this-dest
+        ;        show "first set:"
+        ;        show buildwho
+        ;        show build-who
+;        set destx item 0 [xcor] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+;        set desty item 0 [ycor] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+        set destx [xcor] of this-dest
+        set desty [ycor] of this-dest
+        set original-angle-between-dest towards patch destx desty
+        facexy destx desty
+        set prior-angle heading
+        ;    show (list destx desty)
+
+      ]
+    ]
+
+  ]
+end
+
+to test-setup
+    ifelse num-building-fromfile != 0 [
+    clear-all
+
+    show "Read from file"
+    load-building
+  ][
+    clear-all
+    ifelse building-network? = TRUE [ show "kkkk"
+
+      create-network ] ;; Creates a social network if networks is true. Otherwise just creates a set of unconnected turtles.
+  [randomBuilding
+    show "mmmm"
+  ]
+
+  ]
+    import-raster
+  set patch-page-rank-list []
+  set who-patch-page-rank-list []
+  set people-hit-times 0
+  set people-miss-times 0
+  set hit-ratio 0.0
+
+    if agent-position = "portal"
+  [set nestxy1 list random max-pxcor (min-pycor + 10)
+  set nestxy2 list random max-pxcor (max-pycor - 10)
+  set nestxy3 list (min-pxcor + 10) random max-pycor
+  set nestxy4 list (max-pxcor - 10) random max-pycor
+
+  ;  set foodxy1 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy2 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy3 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy4 list (random max-pxcor) (random max-pycor)
+
+
+  ;;;ADDED(#####################################################################
+
+  set nest (list nestxy1 nestxy2 nestxy3 nestxy4)
+  ]
+    if agent-position = "building" [
+    let nesttemp [ (list xcor ycor) ] of builds
+    show "nesttemp:"
+    show nesttemp
+    show length nesttemp
+
+    set nest building-set
+    show "nest:"
+
+;    ask builds [
+;      let cors (list xcor ycor)
+;      show cors
+;      set nest insert-item 0 nest cors ]
+
+
+;   set nest saved-building-from-file
+    show nest
+  ]
+    set travel-length-list []
+  set travel-length-difference-list []
+  set angle-change-list []
+
+
+;  if saved-building-from-file != 0 [reset-building-from-file]
+  mark-builds-on-patches
+  ask patches [
+  ;set pcolor bg-color
+  set route item 1 pcolor
+  set my-xorigin -1
+  set my-yorigin -1
+  ]
+
+
+  if agent-position = "portal" [
+  foreach nest [this-list -> ask patch item 0 this-list item 1 this-list [
+    sprout 1 [
+      set color red
+      set shape "circle"
+      set size 5
+      ;      show 1
+      stamp
+      die
+    ]
+    ]
+  ]
+  ]
+  create-agents nest
+;  plot-build-degree
+  reset-ticks
+end
+
+to difficulty-confirm
+
+end
+
+to-report observed-footprints-buffer-1
+  let num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+  ask groundprints [ if pcolor <= 95 [set num-routes num-routes + 1] ]
+;  show num-routes
+  report num-routes / num-groundtruthfootprints-fromfile
+
+end
+
+to-report moving-difference
+  ifelse length travel-length-difference-list > 0 [
+report precision (sum travel-length-difference-list / length travel-length-difference-list) 2
+  ] [report -1]
+
+end
+
+to-report emergenced-path-on-lawns-ui
+  let local-emergenced-path-on-lawns 0
+
+;  set emergenced-path-on-lawns_secondmeanvalue 0
+
+  ask patches with [is-lawn = 1] [ if route > value-emergenced-path-on-lawns [ set local-emergenced-path-on-lawns local-emergenced-path-on-lawns + 1 ]
+    if route > second-last-patch-value-mean [ set emergenced-path-on-lawns_secondmeanvalue emergenced-path-on-lawns_secondmeanvalue + 1]
+  ]
+;  set emergenced-path-on-lawns local-emergenced-path-on-lawns
+
+  report emergenced-path-on-lawns
+end
+
+to emergenced-path-on-lawns-fun
+  let local-emergenced-path-on-lawns 0
+
+  let local-emergenced-path-on-lawns_secondmeanvalue 0
+
+  ask patches with [is-lawn = 1] [ if route > value-emergenced-path-on-lawns [ set local-emergenced-path-on-lawns local-emergenced-path-on-lawns + 1 ]
+    if route > second-last-patch-value-mean [ set local-emergenced-path-on-lawns_secondmeanvalue local-emergenced-path-on-lawns_secondmeanvalue + 1]
+  ]
+  ifelse local-emergenced-path-on-lawns = 0 [set emergenced-path-on-lawns -1][set emergenced-path-on-lawns local-emergenced-path-on-lawns]
+  ifelse local-emergenced-path-on-lawns_secondmeanvalue = 0 [set emergenced-path-on-lawns_secondmeanvalue -1][set emergenced-path-on-lawns_secondmeanvalue local-emergenced-path-on-lawns_secondmeanvalue]
+
+
+end
+
+to observed-footprints-buffers
+  let num-routes-buffer0 0
+  let num-routes-buffer1 0
+  let num-routes-buffer2 0
+  let num-routes-buffer4 0
+  let num-routes-buffer8 0
+  let num-routes-buffer16 0
+
+  let num-routes-buffer0_secondmeanvalue 0
+  let num-routes-buffer1_secondmeanvalue 0
+  let num-routes-buffer2_secondmeanvalue 0
+  let num-routes-buffer4_secondmeanvalue 0
+  let num-routes-buffer8_secondmeanvalue 0
+  let num-routes-buffer16_secondmeanvalue 0
+
+  let num-routes_secondmeanvalue 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius 0
+;    ask patches in-radius 0 [ if is-lawn = 1 [  if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]] ] ]
+
+
+  ask patches with [is-lawn = 1] [
+    if footprint-in-buffer = 0 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer0 num-routes-buffer0 + 1] if route >  second-last-patch-value-mean and route > lawns  [set num-routes-buffer0_secondmeanvalue num-routes-buffer0_secondmeanvalue + 1] ]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer1 num-routes-buffer1 + 1] if route >  second-last-patch-value-mean and route > lawns  [set num-routes-buffer1_secondmeanvalue num-routes-buffer1_secondmeanvalue + 1] ]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer2 num-routes-buffer2 + 1] if route >  second-last-patch-value-mean and route > lawns  [set num-routes-buffer2_secondmeanvalue num-routes-buffer2_secondmeanvalue + 1]]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer4 num-routes-buffer4 + 1] if route >  second-last-patch-value-mean and route > lawns  [set num-routes-buffer4_secondmeanvalue num-routes-buffer4_secondmeanvalue + 1]]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 or footprint-in-buffer = 8 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer8 num-routes-buffer8 + 1] if route >  second-last-patch-value-mean and route > lawns [set num-routes-buffer8_secondmeanvalue num-routes-buffer8_secondmeanvalue + 1]]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 or footprint-in-buffer = 8 or footprint-in-buffer = 16 [if route > last-patch-value-mean and route > lawns  [set num-routes-buffer16 num-routes-buffer16 + 1] if route >  second-last-patch-value-mean and route > lawns  [set num-routes-buffer16_secondmeanvalue num-routes-buffer16_secondmeanvalue + 1]]
+
+
+  ]
+  show "num-buffer4:"
+  show num-routes-buffer4
+  show "count-buffer4:"
+
+;  ask patches with [is-lawn = 1 and route > last-patch-value-mean and route > lawns and  (footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 )] [set pcolor 2]
+;  ask patches with [is-lawn = 1 and route > last-patch-value-mean and route > lawns and (footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 )][set pcolor 23]
+
+;  show num-routes
+;  report num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+;  report num-routes / emergenced-path-on-lawns
+;  if emergenced-path-on-lawns = 0 [set emergenced-path-on-lawns -1]
+  print emergenced-path-on-lawns
+  show count patches with [is-lawn = 1 and route > last-patch-value-mean]
+
+  set observed-footprints-buffer0 num-routes-buffer0 / emergenced-path-on-lawns
+  set observed-footprints-buffer1 num-routes-buffer1 / emergenced-path-on-lawns
+  set observed-footprints-buffer2 num-routes-buffer2 / emergenced-path-on-lawns
+  set observed-footprints-buffer4 num-routes-buffer4 / emergenced-path-on-lawns
+  set observed-footprints-buffer8 num-routes-buffer8 / emergenced-path-on-lawns
+  set observed-footprints-buffer16 num-routes-buffer16 / emergenced-path-on-lawns
+
+;  if emergenced-path-on-lawns_secondmeanvalue = 0 [set emergenced-path-on-lawns_secondmeanvalue -1]
+  set observed-footprints-buffer0_secondmeanvalue num-routes-buffer0_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  set observed-footprints-buffer1_secondmeanvalue num-routes-buffer1_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  set observed-footprints-buffer2_secondmeanvalue num-routes-buffer2_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  set observed-footprints-buffer4_secondmeanvalue num-routes-buffer4_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  set observed-footprints-buffer8_secondmeanvalue num-routes-buffer8_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  set observed-footprints-buffer16_secondmeanvalue num-routes-buffer16_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+end
+
+to-report observed-footprints-buffer0_
+  let num-routes 0
+  let total-num-routes 0
+
+  let num-routes_secondmeanvalue 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius 0
+;    ask patches in-radius 0 [ if is-lawn = 1 [  if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]] ] ]
+
+
+  ask patches with [is-lawn = 1] [if footprint-in-buffer = 0 [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] if route >  second-last-patch-value-mean [set num-routes_secondmeanvalue num-routes_secondmeanvalue + 1] ]
+    if footprint-in-buffer = 0 or footprint-in-buffer = 1 [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] if route >  second-last-patch-value-mean [set num-routes_secondmeanvalue num-routes_secondmeanvalue + 1] ]
+
+  ]
+;  show num-routes
+;  report num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+  set observed-footprints-buffer0_secondmeanvalue num-routes_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+end
+
+to-report observed-footprints-buffer1_
+  let num-routes 0
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+  let num-routes_secondmeanvalue 0
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius (1 * 1.5)
+;;    ask patches in-radius 1 [ if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 95 [set num-routes insert-item 0 num-routes list pxcor pycor]] ] ]
+;  ask patches in-radius (1 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ] ]
+
+  ask patches with [is-lawn = 1 and (footprint-in-buffer = 0 or footprint-in-buffer = 1)] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] if route >  second-last-patch-value-mean [set num-routes_secondmeanvalue num-routes_secondmeanvalue + 1]]
+;  show num-routes
+;  show length num-routes
+;  set num-routes remove-duplicates num-routes
+
+;  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here num-routes / emergenced-path-on-lawns
+  set observed-footprints-buffer1_secondmeanvalue num-routes_secondmeanvalue / emergenced-path-on-lawns_secondmeanvalue
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-footprints-buffer2_
+  let num-routes 0
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius (2 * 1.5)
+;    ask patches in-radius (2 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ]]
+
+  ask patches with [is-lawn = 1 and (footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2)] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+;  show num-routes
+;  show length num-routes
+;  set num-routes remove-duplicates num-routes
+
+;  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here num-routes / emergenced-path-on-lawns
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-footprints-buffer4_
+  let num-routes 0
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius (4 * 1.5)
+;    ask patches in-radius (4 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ]]
+  ask patches with [is-lawn = 1 and (footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4)] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+;  show num-routes
+;  show length num-routes
+;  set num-routes remove-duplicates num-routes
+
+;  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here num-routes / emergenced-path-on-lawns
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-footprints-buffer8_
+  let num-routes 0
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius (8 * 1.5)
+;    ask patches in-radius (8 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ]]
+  ask patches with [is-lawn = 1 and (footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 or footprint-in-buffer = 8)] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+;  show num-routes
+;  show length num-routes
+;  set num-routes remove-duplicates num-routes
+
+;  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here num-routes / emergenced-path-on-lawns
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-footprints-buffer16_
+  let num-routes 0
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+;  ask groundprints [
+;    set total-num-routes total-num-routes + count patches in-radius (16 * 1.5)
+;    ask patches in-radius (16 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ]]
+  ask patches with [is-lawn = 1 and (footprint-in-buffer = 0 or footprint-in-buffer = 1 or footprint-in-buffer = 2 or footprint-in-buffer = 4 or footprint-in-buffer = 8 or footprint-in-buffer = 16)] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+;  show num-routes
+;  show length num-routes
+
+;  set num-routes remove-duplicates num-routes
+
+;  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here num-routes / emergenced-path-on-lawns
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-footprints-buffer32_
+  let num-routes []
+  let total-num-routes 0
+;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+;  ]
+
+  ask groundprints [
+    set total-num-routes total-num-routes + count patches in-radius (32 * 1.5)
+    ask patches in-radius (32 * 1.5) [ if is-lawn = 1 [ if route > value-emergenced-path-on-lawns [set num-routes insert-item 0 num-routes list pxcor pycor]] ]]
+;  show num-routes
+;  show length num-routes
+  set num-routes remove-duplicates num-routes
+
+  let len-num-routes length num-routes
+;  show len-num-routes
+;  let ratio-here len-num-routes * (num-groundtruthfootprints-fromfile / emergenced-path-on-lawns)
+  let ratio-here len-num-routes / emergenced-path-on-lawns
+  ifelse ratio-here >= 1 [report 1.00] [  report ratio-here]
+
+
+end
+
+to-report observed-lawns-excepetbuffer0
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+;  ask groundlawns [
+;;    set total-num-routes total-num-routes + count patches in-radius 0
+;;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+;    let ph patch-here
+;    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+;  ]
+
+  ask patches with [is-lawn = 1 and footprint-in-buffer != 0] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes / num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+
+to-report observed-lawns-excepetbuffer1
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+;  ask groundlawns [
+;;    set total-num-routes total-num-routes + count patches in-radius 0
+;;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+;    let ph patch-here
+;    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+;  ]
+
+  ask patches with [is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+
+to-report observed-lawns-excepetbuffer2
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+;  ask groundlawns [
+;;    set total-num-routes total-num-routes + count patches in-radius 0
+;;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+;    let ph patch-here
+;    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+;  ]
+
+  ask patches with [is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+
+to-report observed-lawns-excepetbuffer4
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+;  ask groundlawns [
+;;    set total-num-routes total-num-routes + count patches in-radius 0
+;;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+;    let ph patch-here
+;    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+;  ]
+
+  ask patches with [is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+to-report observed-lawns-excepetbuffer8
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+;  ask groundlawns [
+;;    set total-num-routes total-num-routes + count patches in-radius 0
+;;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+;    let ph patch-here
+;    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 and footprint-in-buffer != 8 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+;  ]
+
+  ask patches with [is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 and footprint-in-buffer != 8] [if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1]]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+to-report observed-lawns-excepetbuffer16
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+  ask groundlawns [
+;    set total-num-routes total-num-routes + count patches in-radius 0
+;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+    let ph patch-here
+    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 and footprint-in-buffer != 8 and footprint-in-buffer != 16 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+  ]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+to-report observed-lawns-excepetbuffer32
+  let num-routes 0
+  let total-num-routes 0
+  ;  foreach saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x
+  ;    ask groundprint fp-xcor fp-ycor [ if pcolor <= 65 [set num-routes num-routes + 1] ]
+  ;  ]
+
+  ask groundlawns [
+;    set total-num-routes total-num-routes + count patches in-radius 0
+;    ask patches in-radius 0 [if is-lawn = 1 [ let pcolor-h int pcolor if pcolor-h <= 65 [set num-routes num-routes + 1]] ]
+    let ph patch-here
+    ask ph [if is-lawn = 1 and footprint-in-buffer != 0 and footprint-in-buffer != 1 and footprint-in-buffer != 2 and footprint-in-buffer != 4 and footprint-in-buffer != 8 and footprint-in-buffer != 16 and footprint-in-buffer != 32 [ if route > value-emergenced-path-on-lawns [set num-routes num-routes + 1] ] ]
+  ]
+
+;    show "num-route:"
+; show num-routes
+
+;  show num-groundtruthlawn-fromfile
+;  report num-routes * (num-groundtruthlawn-fromfile / emergenced-path-on-lawns)
+  report num-routes / emergenced-path-on-lawns
+end
+
+
+to test-observed-lawns-excepetbuffer0
+  show observed-lawns-excepetbuffer0
+end
+
+to load-lawn-mask
+  set saved-lawn-mask-from-file csv:from-file lawn-mask
+
+;  show saved-observed-footprints-from-file
+  set num-groundtruthlawn-fromfile length saved-lawn-mask-from-file
+
+;  show num-groundtruthlawn-fromfile
+  display-observed-lawns
+
+end
+
+
+to display-observed-lawns
+
+
+  foreach  saved-lawn-mask-from-file [x -> let fpp-xcor item 0 x let fpp-ycor item 1 x create-groundlawns 1 [
+    set color [0 255 0 50]
+    set size 0.5
+    set shape "square"
+    setxy fpp-xcor fpp-ycor
+    ask patch-here [set is-lawn 1 set pcolor 135]
+  ] ]
+
+
+;  create-groundprints num-groundtruthfootprints-fromfile [
+;    set color red
+;    set size 2
+;    set shape "circle"
+;  ]
+;
+
+end
+
+to setup
+
+
+  ifelse num-building-fromfile != 0 [
+    clear-all
+
+    show "Read from file"
+    load-building
+  ][
+    clear-all
+    ifelse building-network? = TRUE [ show "kkkk"
+
+      create-network ] ;; Creates a social network if networks is true. Otherwise just creates a set of unconnected turtles.
+  [randomBuilding
+    show "mmmm"
+  ]
+
+  ]
+
+  load-building
+  load-observed-footprints
+
+;  load-lawn-mask
+  set lawn-has-been-loaded 0
+
+  import-raster
+  set travel-length-difference-list []
+  set patch-page-rank-list []
+  set who-patch-page-rank-list []
+  set people-hit-times 0
+  set people-miss-times 0
+  set hit-ratio 0.0
+;  set-default-shape turtles "person"
+  if agent-position = "portal"
+  [set nestxy1 list random max-pxcor (min-pycor + 10)
+  set nestxy2 list random max-pxcor (max-pycor - 10)
+  set nestxy3 list (min-pxcor + 10) random max-pycor
+  set nestxy4 list (max-pxcor - 10) random max-pycor
+
+  ;  set foodxy1 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy2 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy3 list (random max-pxcor) (random max-pycor)
+  ;  set foodxy4 list (random max-pxcor) (random max-pycor)
+
+
+  ;;;ADDED(#####################################################################
+
+  set nest (list nestxy1 nestxy2 nestxy3 nestxy4)
+  ]
+  if agent-position = "building" [
+    let nesttemp [ (list xcor ycor) ] of builds
+    show "nesttemp:"
+    show nesttemp
+    show length nesttemp
+
+    set nest building-set
+    show "nest:"
+
+;    ask builds [
+;      let cors (list xcor ycor)
+;      show cors
+;      set nest insert-item 0 nest cors ]
+
+
+;   set nest saved-building-from-file
+    show nest
+  ]
+  if agent-position = "random" []
+  ;;;)#####################################################################
+  set travel-length-list []
+  set travel-length-difference-list []
+  set angle-change-list []
+
+
+;  if saved-building-from-file != 0 [reset-building-from-file]
+  mark-builds-on-patches
+
+
+  ask patches [
+    ;set pcolor bg-color
+    set route item 1 pcolor
+    set my-xorigin -1
+    set my-yorigin -1
+  ]
+
+
+  if agent-position = "portal" [
+  foreach nest [this-list -> ask patch item 0 this-list item 1 this-list [
+    sprout 1 [
+      set color red
+      set shape "circle"
+      set size 5
+      ;      show 1
+      stamp
+      die
+    ]
+    ]
+  ]
+  ]
+  ;  foreach food [this-list -> ask patch item 0 this-list item 1 this-list [
+  ;    sprout 1[
+  ;      set color black
+  ;      set shape "circle"
+  ;      set size 5
+  ;
+  ;      ask patch-here
+  ;      [
+  ;        set is-building? true
+  ;;        set pcolor yellow
+  ;        ask neighbors [set is-building? true]
+  ;      ]
+  ;      stamp
+  ;      die
+  ;    ]
+  ;    ]
+  ;  ]
+
+
+
+  ;  let temp 0
+  ;  create-turtles number-of-agents [
+  ;    set color red
+  ;    set size 2
+  ;    let this-nest item (temp mod 4) nest
+  ;    setxy item 0 this-nest item 1 this-nest
+  ;    ;    let this-dest item (temp mod 4) food
+  ;    ;    set destx item 0 this-dest
+  ;    ;    set desty item 1 this-dest
+  ;    let this-dest one-of building-set
+  ;    set destx item 0 this-dest
+  ;    set desty item 1 this-dest
+  ;    ;    show (list destx desty)
+  ;    set temp temp + 1
+  ;  ]
+
+
+  create-agents nest
+;  plot-build-degree
+  reset-ticks
+end
+
+to randomBuilding
+  set building-set []
+  let num-b-temp num-building - 1
+  let dj true
+
+  while [dj]
+    [
+      if num-b-temp = 0 [set dj false]
+      ;      show dj
+
+      let ran-pxcor 0
+      let ran-pycor 0
+      let build-deg 0
+
+      ifelse num-building-fromfile != 0 [
+        let p-f item num-b-temp saved-building-from-file
+        set ran-pxcor item 0 p-f
+        set ran-pycor item 1 p-f
+        set build-deg item 2 p-f
+
+;        show "locs from file"
+      ][      set ran-pxcor random max-pxcor
+      set ran-pycor random max-pycor
+      show "should not here"
+      ]
+
+      set ran-pxcor round ran-pxcor
+      set ran-pycor round ran-pycor
+
+;      show "building-set:"
+      set building-set insert-item 0 building-set list ran-pxcor ran-pycor
+      ;      ifelse empty? building-set [set building-set insert-item 0 building-set list ran-pxcor ran-pycor]
+      ;      []
+      ;      show building-set
+      ask patch ran-pxcor ran-pycor [
+        sprout-builds 1 [
+          set color white
+          set shape "house"
+          let this-size random 10
+;          set size this-size * 2
+          set size 2
+          setxy ran-pxcor ran-pycor
+          set build-degree build-deg
+
+          ask patch-here
+          [
+            ;            show pxcor
+            ;            show pycor
+            set is-building? true
+            ;        set pcolor yellow
+            ;            ask neighbors [set is-building? true]
+            set my-xorigin ran-pxcor
+            set my-yorigin ran-pycor
+
+
+          ]
+;          ask patches in-radius this-size [
+;            set is-building? true
+;            set my-xorigin ran-pxcor
+;            set my-yorigin ran-pycor
+;          ]
+
+;          stamp
+;          die
+        ]
+      ]
+      set num-b-temp num-b-temp - 1
+      ;      show num-b-temp
+  ]
+
+;  show count builds
+end
+
+to go
+
+  ;  if all? turtles [abs(xcor - destx)<= 2  and abs(ycor - desty)<= 2]
+  ;  if all? turtles [
+  ;    [my-xorigin] of patch-ahead 1 = destx and [my-yorigin] of patch-ahead 1 = desty or abs(xcor - destx)<= 2  and abs(ycor - desty)<= 2]
+  ;;    abs(xcor - destx)<= 2  and abs(ycor - desty)<= 2]
+  ;  [stop]
+
+  if ticks >= num-ticks [stop]
+  if ticks = 1 [
+    update-groundprint-buffers2
+    set emergenced-path-on-lawns -1
+    set emergenced-path-on-lawns_secondmeanvalue -1
+    print "buffer-updated"
+  ]
+
+  if ticks > 100 and ticks mod 200 = 1 [
+
+    set ht-index report-ht-index
+    set CRG-index report_CRG
+;    render-patch-normal
+    render-patch
+    emergenced-path-on-lawns-fun
+
+    observed-footprints-buffers
+
+;    set people-hit-times 0
+;    set  people-miss-times 0
+  ]
+
+  if ticks mod 100 = 1 [if lawn-has-been-loaded = 0 [load-lawn-mask set lawn-has-been-loaded 1]]
+  if ticks mod 1005 = 0 [
+;    cal-pagerank-diffusion
+    cal-weighted-pagerank-diffusion
+  ]
+  if people-hit-times != 0[
+    set hit-ratio people-hit-times / (people-hit-times + people-miss-times )]
+;  plot-routes
+;  plot-build-visits
+  if route-decay = true[
+    set route-decay-auto false
+    ask patches [if route > 0 [set route route * (1 - decay-rate-route)]] ; Linear decay
+  ]
+  if route-decay-auto = true[
+    set route-decay false
+    ask patches [if route > 0 [set route route - decay-rate-route * 1.0 / route] if route < 0 [set route 0]] ; Gravity decay: Bigger decrease less, while smaller decrease greater
+  ]
+
+  ask people [
+    let who-num-here who - num-groundtruthfootprints-fromfile
+    if who-num-here >= ticks [ stop ] ;; delay initial departure
+                             ;    wiggle leader-wiggle-angle
+                             ;;    let d-x item 0 [xcor] of builds with [who = build-who]
+                             ;;    let d-y item 0 [ycor] of builds with [who = build-who]
+                             ;
+                             ;;    show (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor)
+                             ;;    if (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor) <= 4
+                             ;;    if ([my-xorigin] of patch-ahead 1 - destx)*([my-xorigin] of patch-ahead 1 - destx) + ([my-yorigin] of patch-ahead 1 - desty)*([my-yorigin] of patch-ahead 1 - desty)<= 4
+                             ;    if [my-xorigin] of patch-ahead 1 = destx and [my-yorigin] of patch-ahead 1 = desty or abs(xcor - destx)<= 2  and abs(ycor - desty)<= 2
+                             ;    [
+                             ;      ifelse building-network? = False [
+                             ;      let this-dest one-of building-set
+                             ;      set destx item 0 this-dest
+                             ;      set desty item 1 this-dest
+                             ;      ]
+                             ;      [;; set the destx and desty from breed builds
+                             ;      if length building-hit-pro != 0 [
+                             ;        let this-index random length building-hit-pro
+                             ;
+                             ;        let this-dest builds with [who = item this-index building-hit-pro]
+                             ;;        show [who] of this-dest
+                             ;          let new-x item 0 [xcor] of this-dest
+                             ;          let new-y item 0 [ycor] of this-dest
+                             ;
+                             ;          ifelse (destx - new-x)*(destx - new-x) + (desty - new-y)*(desty - new-y) <= 4[
+                             ;;          ifelse abs (new-x - destx) <= 10 and abs(new-x - desty) <= 10 [
+                             ;;            show distancexy new-x new-y
+                             ;            show "old index"
+                             ;            show this-index
+                             ;           set this-index int this-index + 0.5 * length building-hit-pro
+                             ;            show "new index"
+                             ;            show this-index
+                             ;            if this-index >= length building-hit-pro [set this-index this-index - length building-hit-pro show "new-2 index" show this-index]
+                             ;            set this-dest builds with [who = item this-index building-hit-pro]
+                             ;;        show [who] of this-dest
+                             ;;          set new-x item 0 [xcor] of this-dest
+                             ;;          set new-y item 0 [ycor] of this-dest
+                             ;            set destx item 0 [xcor] of this-dest
+                             ;            set desty item 0 [ycor] of this-dest
+                             ;          ]
+                             ;          [set destx item 0 [xcor] of this-dest
+                             ;            set desty item 0 [ycor] of this-dest]
+                             ;      ;    show (list destx desty)
+                             ;        ]
+                             ;      ]
+                             ;    ]
+
+    let this-buildwho buildwho
+    if memory-last-patch-x = 0 and memory-last-patch-y = 0 [set memory-last-patch-x -1 set memory-last-patch-y -1]
+    ;   ask builds with [who = buildwho]
+    ;    show this-buildwho
+;    let d-x item 0 [xcor] of builds with [who = this-buildwho]
+;    let d-y item 0 [ycor] of builds with [who = this-buildwho]
+    let d-x [xcor] of turtle this-buildwho
+    let d-y [ycor] of turtle this-buildwho
+
+;    show prior-angle
+;    show angle-change
+    ;    show "x:"
+    ;    show d-x
+    ;    show "y:"
+    ;    show d-y
+    ;    show (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor)
+;    let speed-here speed
+;    if (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor) <= head-distance * 1.4142135623731 [set almost-there? true ]
+;    if almost-there? = true [set speed-here 1]
+    let distance-here (d-x - xcor) * (d-x - xcor) + (d-y - ycor) * (d-y - ycor)
+    let distance-here-dest sqrt distance-here
+
+    ifelse distance-here-dest <= speed * 1.5
+
+    [
+      ;      show "jll"
+      if length building-hit-pro != 0 [
+;        show "AHA-1"
+        let this-index random length building-hit-pro
+
+        ;        let this-dest-who item 0 [who] of builds with [who = item this-index building-hit-pro]
+
+        let this-dest-who item this-index building-hit-pro
+
+;        let this-dest-who-destx item 0 [xcor] of builds with [who = this-dest-who]
+;        let this-dest-who-desty item 0 [ycor] of builds with [who = this-dest-who]
+        let this-dest-who-destx [xcor] of turtle this-dest-who
+        let this-dest-who-desty [ycor] of turtle this-dest-who
+;        ifelse this-dest-who = this-buildwho or (d-x - this-dest-who-destx)*(d-x - this-dest-who-destx) + (d-y - this-dest-who-desty)*(d-y - this-dest-who-desty) <= 2 [ ; 两次获得的目的地ID相同或距离太近
+        ifelse this-dest-who = this-buildwho [ ; 两次获得的目的地ID相同或距离太近
+
+          set this-index int this-index + 0.5 * length building-hit-pro
+          if this-index >= length building-hit-pro [set this-index this-index - length building-hit-pro]
+          set this-dest-who item this-index building-hit-pro
+          set buildwho this-dest-who
+          let this-destx  [xcor] of  turtle this-dest-who
+          let this-desty  [ycor] of  turtle this-dest-who
+          set travel-length-difference-list insert-item 0 travel-length-difference-list (abs (travel-length - SD-distance))
+          set destx this-destx
+          set desty this-desty
+          set SD-distance distancexy destx desty
+          set original-angle-between-dest towards patch destx desty
+          set travel-length-list insert-item 0 travel-length-list travel-length
+          if travel-length > 0[
+            set angle-change-list insert-item 0 angle-change-list (angle-change / travel-length)]
+
+          set travel-length 0.0
+          set angle-change 0.0
+;          set almost-there? false
+;          show "AHA-2"
+          ;          show "gl 1"
+        ][
+;          show "old bulid:"
+;          show buildwho
+;          show "new bulid:"
+;          show this-dest-who
+          set buildwho this-dest-who
+          let this-destx  [xcor] of  turtle this-dest-who
+          let this-desty  [ycor] of  turtle this-dest-who
+          set travel-length-difference-list insert-item 0 travel-length-difference-list ((abs travel-length - SD-distance))
+          set destx this-destx
+          set desty this-desty
+          set SD-distance distancexy destx desty
+          set original-angle-between-dest towards patch destx desty
+          set travel-length-list insert-item 0 travel-length-list travel-length
+          if travel-length > 0[
+            set angle-change-list insert-item 0 angle-change-list (angle-change / travel-length)]
+          set travel-length 0.0
+          set angle-change 0.0
+;          set almost-there? false
+          ;        show "gl 2"
+;          show "AHA-3"
+        ]
+        ;        show [who] of this-dest
+
+    ]
+      ; the frq-visited of destination build + 1
+      ask turtle this-buildwho [set frq-visited frq-visited + 1
+;        show frq-visited
+      ]
+
+    ]
+    [
+      ;      show "zhaolu..."
+
+      let got-route? find-route distance-here-dest; find a route around firstly
+                            ;      show got-route?
+                            ;    if got-route? = false [
+                            ;      correct-path ; can't find a route around then walk by itself
+                            ;    ]
+                            ;    if got-route? = false [
+                            ;        facexy destx desty]
+
+;      ifelse speed-here = speed [ show "move >1 steps"
+      set find-a-max-patch got-route?
+      ifelse got-route?  [set people-hit-times people-hit-times + 1] [set people-miss-times people-miss-times + 1]
+
+
+      repeat speed [
+        let from-page pageID
+;        set prior-angle heading
+        set xcor-backStep xcor
+        set ycor-backStep ycor
+
+        set memory-last-patch-x pxcor
+        set memory-last-patch-y pycor
+
+        fd 1
+        set route route + 1
+;        set travel-length travel-length + 1
+        set travel-length travel-length + (distancexy xcor-backStep ycor-backStep)
+        set angle-change angle-change + abs (heading - prior-angle)
+        set prior-angle heading
+;        set pcolor gray - route * 1.3
+
+        let to-page pageID
+        if from-page != to-page [
+
+;        show from-page
+        ask turtle from-page [
+
+;          create-linkpatchpage-to one-of patchpages with [who = to-page]
+            create-linkpatchpage-to turtle to-page
+            let index-here 0
+            let is-found? false
+            foreach out-link-list [x ->
+;              show "1"
+              ifelse x = to-page [
+                set out-link-list-count replace-item index-here out-link-list-count (item index-here out-link-list-count + 1)
+                set is-found? true
+;                stop
+              ]
+              [ set index-here index-here + 1]]
+
+            if is-found? = false [set out-link-list insert-item 0 out-link-list to-page set out-link-list-count insert-item 0 out-link-list-count 1 ]
+        ]
+        ]
+
+      ]
+;      ]
+;      [show "move 1 step:"
+;        show speed-here
+;        fd speed-here set route route + 0.05 set pcolor gray - route * 1.3]
+;      fd speed
+;      set route route + 0.05
+      ;    if route <= 0 [set route 0.1]
+;      set pcolor gray - route
+;      set pcolor gray - route * 1.3
+      ;    if (xcor > (destx - 1 ))                    ;; leader heads straight for food, if it is close
+      ;       [ facexy destx desty ]
+      ;    if xcor < destx                            ;; do nothing if you're at or past the food
+      ;       [ fd 0.5 ]
+
+      facexy destx desty
+  ]]
+  ;    if got-route? = false [
+  ;      correct-path ; can't find a route around then walk by itself
+  ;    ]
+
+  ;    if [pcolor] of patch-ahead 3 = black
+  ;        [ show 1
+  ;          let this-random random 100
+  ;            if this-random >= 50 [rt 45]
+  ;            if this-random < 50  [lt 45]
+  ;            ]
+  ;  if [pcolor] of patch-at 0 1  = black
+  ;        [ let this-random random 100
+  ;            if this-random >= 50 [rt 45]
+  ;            if this-random < 50  [lt 45]
+  ;            ]
+  ;  if [pcolor] of patch-at 1 0  = black
+  ;        [ let this-random random 100
+  ;            if this-random >= 50 [rt 45]
+  ;            if this-random < 50  [lt 45]
+  ;            ]
+  ;  if [pcolor] of patch-at -1 0  = black
+  ;        [ let this-random random 100
+  ;            if this-random >= 50 [rt 45]
+  ;            if this-random < 50  [lt 45]
+  ;            ]
+
+
+
+
+
+
+  tick
+
+end
+to-report find-route [distance-local]
+  ;  let next-jump-to
+  let pt patch-here
+  let got-route-h? false
+
+  let memory-last-patch-x-here memory-last-patch-x
+  let memory-last-patch-y-here memory-last-patch-y
+
+  let head-range min list distance-local head-distance
+
+  if any? patches with [route != 0 and pxcor != [pxcor] of pt and pycor != [pycor] of pt and pxcor != memory-last-patch-x-here and pycor != memory-last-patch-y-here] in-cone head-range head-angle-max [
+    set got-route-h? true
+    ;    show [pxcor] of pt
+    ;    show [pycor] of pt
+
+    ;    let patches-in-cone patches with [route != 0 and pxcor != [pxcor] of pt and pycor != [pycor] of pt] in-cone 1 head-angle-max
+
+    ;    let xs [pxcor] of patches-in-cone
+    ;    let ys [pycor] of patches-in-cone
+
+    let patch-this max-one-of patches with [route != 0 and pxcor != [pxcor] of pt and pycor != [pycor] of pt and pxcor != memory-last-patch-x-here and pycor != memory-last-patch-y-here] in-cone head-range head-angle-max [route]
+    ;    show [route] of patch-this
+    let pxc-pthis [pxcor] of patch-this
+    let pyc-pthis [pycor] of patch-this
+    ;    show pxc-pthis
+    ;    show pyc-pthis
+;    set prior-angle heading
+    set heading towards patch pxc-pthis pyc-pthis
+
+    set a-max-patch-x pxc-pthis
+    set a-max-patch-y pyc-pthis
+  ]
+
+  ;  let xs [pxcor] of neighbors
+  ;  let ys [pycor] of neighbors
+  ;  let angles []
+  ;  let it 0
+  ;  while [true]
+  ;  [
+  ;    if it = 8 [stop]
+  ;    set it it + 1
+  ;    item it xs
+  ;
+  ;  ]
+
+report got-route-h?
+end
+
+;to correct-path
+;  ifelse heading > 180
+;    [ rt 180 ]
+;    [ if patch-at 0 -1 = nobody
+;        [ rt 100 ]
+;     if patch-at 0 1 = nobody
+;        [ lt 100 ] ]
+;end
+to correct-path
+
+  let dj true
+  let counting 0
+  while [dj]
+  [
+    if counting > 10 [stop]
+    set counting counting + 1
+    ;    show counting
+    ifelse patch-ahead 1 != nobody [
+
+      ifelse [is-building?] of patch-ahead 1 = true [
+        ;        let xhere patch-ahead 1
+        ifelse ([pxcor] of patch-ahead 1 - destx)*([pxcor] of patch-ahead 1 - destx) +  ([pycor] of patch-ahead 1 - desty)* ([pycor] of patch-ahead 1 - desty)<= 4
+
+        ;        ifelse ([my-xorigin] of patch-ahead 1 - destx)*([my-xorigin] of patch-ahead 1 - destx) +  ([my-yorigin] of patch-ahead 1 - desty)* ([my-yorigin] of patch-ahead 1 - desty)<= 2
+        [stop]
+        [let this-random random 100
+          if this-random >= 50 [rt 50]
+          if this-random < 50  [lt 50]]
+      ][stop]
+    ][let this-random random 100
+      if this-random >= 50 [rt 50]
+      if this-random < 50  [lt 50]
+      ;      show 2
+    ]
+  ]
+;  let d-x item 0 [xcor] of builds with [who = buildwho]
+;  let d-y item 0 [ycor] of builds with [who = buildwho]
+
+  let d-x  [xcor] of turtle buildwho
+  let d-y  [ycor] of turtle buildwho
+
+  show (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor)
+  ;  if (d-x - xcor)*(d-x - xcor) + (d-y - ycor)*(d-y - ycor) <= 4
+
+  ;    ifelse [my-xorigin] of patch-ahead 1 != destx and [my-yorigin] of patch-ahead 1 != desty
+  ;    [set dj false]
+  ;    [
+  ;;      ifelse patch-ahead 1 != nobody and [is-building?] of patch-ahead 1 != true
+  ;       ifelse [is-building?] of patch-ahead 1 != true
+  ;      [set dj false
+  ;        ;      let this-random random 100
+  ;        ;            if this-random >= 50 [rt 90]
+  ;        ;            if this-random < 50  [lt 90]
+  ;
+  ;      ][
+  ;        ;      ifelse [is-building?] of patch-ahead 1 = true
+  ;        ;      [
+  ;        let this-random random 100
+  ;        if this-random >= 50 [rt 50]
+  ;        if this-random < 50  [lt 50]
+  ;        ;      ]
+  ;        ;      [
+  ;        ;        set dj false
+  ;        ;      ]
+  ;      ]
+  ;    ]
+  ;    ][let this-random random 100
+  ;        if this-random >= 50 [rt 50]
+  ;        if this-random < 50  [lt 50]
+  ;    ]
+
+  ;    and [is-building?] of patch-ahead 1 != false [
+  ;      set dj false
+
+
+  ;  ]
+  ;    [let this-random random 100
+  ;            if this-random >= 50 [rt 90]
+  ;            if this-random < 50  [lt 90]]
+  ;    ]
+  ;    if patch-at 0 -1 = nobody
+  ;        [ rt 100 ]
+  ;     if patch-at 0 1 = nobody
+  ;        [ lt 100 ]
+end
+;to correct-path
+;    if patch-at 0 -1 = nobody
+;        [ rt 100 ]
+;     if patch-at 0 1 = nobody
+;        [ lt 100 ]
+;end
+;; turtle procedure; wiggle a random amount, averaging zero turn
+to wiggle [angle]
+  rt random-float angle
+  lt random-float angle
+end
+
+to create-agents [here-nest]
+  let temp 0
+  create-people number-of-agents [
+    set color red
+    set size 2
+    set almost-there? false
+
+
+    let this-nest one-of here-nest
+;    let this-nest item (temp mod 4) here-nest
+
+    setxy item 0 this-nest item 1 this-nest
+    set temp temp + 1
+    set travel-length 0.0
+    set angle-change 0.0
+
+
+    ;    let this-dest item (temp mod 4) food
+    ;    set destx item 0 this-dest
+    ;    set desty item 1 this-dest
+    ifelse num-building-fromfile != 0 [
+      ;; set the destx and desty from breed builds
+
+;      show "building-hit-pro:"
+;      show length building-hit-pro
+
+      if length building-hit-pro = 0 [
+            ; Construct building-hit-pro: the probability of visiting of each build
+        set building-hit-pro []
+        ask builds [
+        repeat build-degree [set building-hit-pro insert-item 0 building-hit-pro who]
+;          set build-degree count builds
+;          set building-hit-pro insert-item 0 building-hit-pro who]
+      ]]
+
+      let this-index random length building-hit-pro
+;     let this-dest builds with [who = item this-index building-hit-pro]
+      let this-dest turtle item this-index building-hit-pro
+      set destx [xcor] of this-dest
+      set desty [ycor] of this-dest
+
+      while [ (destx = pxcor) and (desty = pycor) ]
+      [
+        set this-index random length building-hit-pro
+        ;     let this-dest builds with [who = item this-index building-hit-pro]
+        set this-dest turtle item this-index building-hit-pro
+        set destx [xcor] of this-dest
+        set desty [ycor] of this-dest
+      ]
+;      show "pxcor:" show pxcor
+;      show "pycor:" show pycor
+;      show "destx:" show destx
+;      show "desty:" show desty
+
+
+;        set this-index random length building-hit-pro
+;;        let this-dest builds with [who = item this-index building-hit-pro]
+;        set this-dest turtle item this-index building-hit-pro
+;;        set buildwho item 0 [who] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+        set buildwho [who] of this-dest
+;        ;        show "first set:"
+;        ;        show buildwho
+;        ;        show build-who
+;;        set destx item 0 [xcor] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+;;        set desty item 0 [ycor] of this-dest;;;;;;;;;;;;;;;;改 with [who 之前原代码
+;
+;
+;        set destx [xcor] of this-dest
+;        set desty [ycor] of this-dest
+        set original-angle-between-dest towards patch destx desty
+        facexy destx desty
+        set prior-angle heading
+        ;    show (list destx desty)
+
+    ]
+    [
+      ifelse building-network? = false [
+      let this-dest one-of building-set
+      set destx item 0 this-dest
+      set desty item 1 this-dest
+      facexy destx desty
+      set prior-angle heading
+      ;    show (list destx desty)
+
+      ][]
+   ]
+  ]
+
+end
+
+to reset-building-from-file
+  let num-b-temp 0
+  ask builds[
+    let p-f item num-b-temp saved-building-from-file
+    set xcor item 0 p-f
+    set ycor item 1 p-f
+    set build-degree item 2 p-f
+    set num-b-temp num-b-temp + 1
+  ]
+  mark-builds-on-patches
+  display
+end
+
+to create-network ;; Includes procedures for four kinds of networks.
+
+  if network-type = "random" [ ;; Creates one random network (Erdös-Renyi random network).
+    create-builds num-building ;; Create number-of-building turtles.
+    repeat (network-param * count builds) / 2 [ ;; Divide by two (because a link connects two turtles).
+      ask one-of builds [
+;        show who
+        let here-link one-of other builds with [ not linkbuild-neighbor? myself ]
+        if here-link != nobody [
+          create-linkbuild-with one-of other builds with [ not linkbuild-neighbor? myself ] ];; Ask a random turtle to create link with another random turtle.
+      ]
+      ;      layout-spring turtles links 0.2 4.0 500 ;; Lay the turtles out (mainly cosmetic).
+    ]
+  ]
+
+  if network-type = "small-world" [ ;; Creates a Watts-Strogatz small-world network (high clustering coefficient). Uses the algorithm from NetLogo network extension (https://ccl.northwestern.edu/netlogo/docs/nw.html).
+                                    ;    nw:generate-watts-strogatz turtles links num-building network-param 0.1 [ fd 10 ] ;; Structure: turtle-breed link-breed num-nodes neighborhood-size rewire-probability optional-command-block
+    nw:generate-watts-strogatz builds linkbuilds num-building network-param 0.1 [ fd 10 ] ;; Structure: turtle-breed link-breed num-nodes neighborhood-size rewire-probability optional-command-block
+
+    ;    ask builds [
+    ;      set size 3
+    ;      ;    layout-spring turtles links 0.2 4.0 500 ;; reorganise the layout to highlight new network structure
+    ;      set color white ;; Set agent colour white to begin with. They are coloured black or red later.
+    ;    ]
+  ]
+
+  if network-type = "preferential" [ ;; Creates a scale-free network with hubs (preferential attachment). This is the Barabási–Albert network model. Uses the algorithm from NetLogo network extension (https://ccl.northwestern.edu/netlogo/docs/nw.html).
+    nw:generate-preferential-attachment builds linkbuilds num-building network-param [ fd 10 ;; Structure: turtle-breed link-breed num-nodes min-degree optional-command-block
+                                                                                             ;      repeat 3 [
+                                                                                             ;        ;   layout-spring turtles links 0.2 4.0 500 ;; Layout procedure (mainly cosmetic).
+                                                                                             ;        display  ;; For smooth animation.
+                                                                                             ;      ]
+    ]
+  ]
+
+
+  if network-type = "KE" [ ;; Creates a scale-free network with high clustering, the Klemm-Eguíluz model.
+                           ;; The following algorithm is adapted with permission from Fernando Sancho Caparrini's "Complex Networks Toolbox", see http://www.cs.us.es/~fsancho/?e=162#KE for details and a conceptual model.
+                           ;    clear-all
+    create-builds network-param [ ;; The algorithm begins with an initial set of turtles. The number of initial turtles is defined by network-param. (This is m0 in the original KE algorithm.)
+                                  ;      set color red
+    ]
+    ask builds [
+      create-linkbuilds-with other builds
+    ]
+    let active builds with [self = self]
+    let no-active no-turtles
+    repeat (num-building - network-param) [
+      create-builds 1 [
+        set color white
+        foreach shuffle (sort active) [ [ac] ->
+          ifelse (random-float 1 < mu or count no-active = 0)
+          [
+            create-linkbuild-with ac
+          ]
+          [
+            let cut? false
+            while [not cut?] [
+              let nodej one-of no-active
+              let kj [count my-linkbuilds] of nodej
+              let S sum [count my-linkbuilds] of no-active
+              if (kj / S) > random-float 1 [
+                create-linkbuild-with nodej
+                set cut? true
+              ]
+            ]
+          ]
+        ]
+        set active (turtle-set active self)
+        let cut? false
+        while [not cut?] [
+          let nodej one-of active
+          let kj [count my-linkbuilds] of nodej
+          let S sum [1 / (count my-linkbuilds)] of active
+          let P (1 / (kj * S))
+          if P > random-float 1 [
+            set no-active (turtle-set no-active nodej)
+            set active active with [self != nodej]
+            set cut? true
+          ]
+        ]
+      ]
+  ]]
+
+  if network-type = "evenly-random"[
+    create-builds num-building
+;    ask builds [
+;        let to-link other builds with [ not linkbuild-neighbor? myself ]
+;        if to-link != nobody [
+;;          create-linkbuild-with one-of other builds with [ not linkbuild-neighbor? myself ] ];; Ask a random turtle to create link with another random turtle.
+;      create-linkbuilds-with to-link ];; Ask a random turtle to create link with another random turtle.
+;    ]
+  ]
+
+;  ask builds [setxy random-xcor random-ycor]
+
+  mark-builds-on-patches
+end
+
+to mark-builds-on-patches
+  ;  let linkNumAll count linkbuilds
+  ;  set building-set []
+  set building-hit-pro []
+
+
+  ;  let ran-pxcor random max-pxcor
+  ;  let ran-pycor random max-pycor
+  ;  set building-set insert-item 0 building-set list ran-pxcor ran-pycor
+
+
+  ask builds [
+
+
+;    setxy random-xcor random-ycor
+    set color white
+    set shape "house"
+    set frq-visited 0
+    ; calculate degree of this building
+    ;    show my-linkbuilds
+    let this-size count my-linkbuilds
+    repeat this-size [
+      set building-hit-pro insert-item 0 building-hit-pro who
+    ]
+    if num-building-fromfile = 0[
+      if this-size = 0 [set this-size count builds set building-hit-pro insert-item 0 building-hit-pro who] ; if evenly-random is selected
+      set build-degree this-size]
+    set label build-degree
+    set label-color red
+
+    ;    show building-hit-pro
+    ;    let this-size 5
+    ;    show count my-trajs
+;    set size this-size
+    set size 3
+    ;    set size this-size * 2
+    let ran-pxcor 0
+    let ran-pycor 0
+    ask patch-here
+          [
+            set is-building? true
+            set my-xorigin pxcor
+            set my-yorigin pycor
+            set ran-pxcor pxcor
+            set ran-pycor pycor
+    ]
+
+    ask patches in-radius (this-size / 2) [
+      set is-building? true
+      set my-xorigin ran-pxcor
+      set my-yorigin ran-pycor
+    ]
+
+  ]
+  ask linkbuilds [hide-link]
+end
+
+to hide-buildings
+  ask builds [hide-turtle]
+end
+to show-buildings
+  ask builds [show-turtle]
+end
+
+to render-patch
+;  show patch-value-mean
+  let render-color [ 15 15 45 45 65 65 95 95 105 105 ]
+  let render-color-ht4 [ 15 45 65 105 ]
+  let render-color-ht5 [ 15 45 65 95 105 ]
+  let render-color-ht3 [ 15 65 105 ]
+  let render-color-ht6 [ 15 25 45 65 95 105 ]
+
+;  set ht-index report-ht-index
+;  set CRG-index report_CRG
+
+
+  if ht-index >= 2 [
+    let is-first? true
+    let color-index 0
+    foreach patch-value-mean [this-mean ->
+      if is-first? = true [
+        set is-first?  false
+        ask patches with [route >= this-mean ] [set pcolor item color-index render-color]
+      set color-index color-index + int 10 / ht-index]
+
+      ask patches with [route < this-mean and route > 0] [set pcolor item color-index render-color]
+
+      set color-index color-index + int 10 / ht-index
+
+    ]
+
+  ]
+  ask patches with [route = 0] [set pcolor 0]
+
+end
+
+
+
+to render-patch-normal
+  let render-color [ 105 105 95 95 65 65 45 45 15 15 15]
+  let cnt-random 1000
+  let rout-list-sample []
+  ;repeat cnt-random [
+  ;  let rn one-of patches
+  ;  insert-item 1 rout-list-sample  ]
+  let max-route-patches patches with-max [route]
+  let maxroute [route] of one-of max-route-patches
+  let min-route-patches patches with-min [route]
+  let minroute [route] of one-of min-route-patches
+
+  show maxroute
+  show minroute
+  ask patches [
+    let route-span maxroute - minroute
+
+    ifelse route-span > 0 [
+    let route-ratio round (route - minroute)/(maxroute - minroute)* 10
+;    show route-ratio
+    set pcolor item route-ratio render-color
+  ][set pcolor 0]
+  ]
+;  if ht-index >= 2 [
+;    let is-first? true
+;    let color-index 0
+;    foreach patch-value-mean [this-mean ->
+;      if is-first? = true [
+;        set is-first?  false
+;        ask patches with [route >= this-mean ] [set pcolor item color-index render-color]
+;      set color-index color-index + int 10 / ht-index]
+;
+;      ask patches with [route < this-mean and route > 0] [set pcolor item color-index render-color]
+;      set color-index color-index + int 10 / ht-index
+;
+;    ]
+;
+;  ]
+
+end
+
+to render-path-ht
+
+end
+
+to display-observed-footprints
+
+  foreach  saved-observed-footprints-from-file [x -> let fp-xcor item 0 x let fp-ycor item 1 x create-groundprints 1 [
+    set color [255 255 255 80]
+    set size 2
+    set shape "square"
+    setxy fp-xcor fp-ycor
+
+;    ask patches in-radius 2 [ if is-lawn = 1 [ set footprint-in-buffer 2  ]]
+;    ask patches in-radius 1 [ if is-lawn = 1 [ set footprint-in-buffer 1  ]]
+;    ask patches in-radius 0 [ if is-lawn = 1 [ set footprint-in-buffer 0  ]]
+  ] ]
+
+
+;  create-groundprints num-groundtruthfootprints-fromfile [
+;    set color red
+;    set size 2
+;    set shape "circle"
+;  ]
+;
+end
+
+to update-groundprint-buffers
+;  show "update-groundprint-buffers"
+  ask groundprints [
+    ask patches in-radius (32 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 32  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius (16 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 16  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius (8 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 8  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius (4 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 4  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius (2 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 2  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius (1 * 1.5) [ if is-lawn = 1 [ set footprint-in-buffer 1  ]
+  ]]
+  ask groundprints [
+    ask patches in-radius 0 [ if is-lawn = 1 [ set footprint-in-buffer 0  ]
+  ]]
+
+end
+
+to update-groundprint-buffers2
+;  show "update-groundprint-buffers"
+  ask groundprints [
+    ask patches in-radius (32 * 1.5) [ set footprint-in-buffer 32
+  ]]
+  ask groundprints [
+    ask patches in-radius (16 * 1.5) [  set footprint-in-buffer 16
+  ]]
+  ask groundprints [
+    ask patches in-radius (8 * 1.5) [  set footprint-in-buffer 8
+  ]]
+  ask groundprints [
+    ask patches in-radius (4 * 1.5) [  set footprint-in-buffer 4
+  ]]
+  ask groundprints [
+    ask patches in-radius (2 * 1.5) [  set footprint-in-buffer 2
+  ]]
+  ask groundprints [
+    ask patches in-radius (1 * 1.5) [  set footprint-in-buffer 1
+  ]]
+  ask groundprints [
+    ask patches in-radius 0 [  set footprint-in-buffer 0
+  ]]
+
+end
+
+;;;;;;;;;;;;;Saving&Loading data;;;;;;;;;;;;;;;;;;;;;;;
+to save-building
+  if num-building-fromfile > 0[
+  let builds-locations []
+  ask builds [
+    let pors []
+    set pors insert-item 0 pors build-degree
+    set pors insert-item 0 pors ycor
+    set pors insert-item 0 pors xcor
+    set builds-locations insert-item 0 builds-locations pors
+  ]
+  set num-building-fromfile ""
+  csv:to-file building-path builds-locations
+
+  csv:to-file portals-agent-path nest
+  set num-portal-fromfile ""
+  ]
+end
+
+to load-building
+  clear-all
+  set saved-building-from-file csv:from-file building-path
+
+  show saved-building-from-file
+  set num-building-fromfile length saved-building-from-file
+  set num-building length saved-building-from-file
+
+  randomBuilding
+
+end
+
+to load-observed-footprints
+
+  set saved-observed-footprints-from-file csv:from-file observed-footprints
+
+;  show saved-observed-footprints-from-file
+  set num-groundtruthfootprints-fromfile length saved-observed-footprints-from-file
+
+;  show num-groundtruthfootprints-fromfile
+  display-observed-footprints
+
+end
+
+
+to load-portal
+  let portals-agent csv:from-file portals-agent-path
+  set num-portal-fromfile length portals-agent
+end
+
+
+to unload-building
+  set saved-building-from-file 0
+  set num-building-fromfile 0
+  set num-portal-fromfile 0
+  set nest 0
+end
+
+
+
+to cal-pagerank-diffusion
+
+    ;; return links and pages to initial state
+;    ask links [ set color gray set thickness 0 ]
+;  set who-patch-page-rank-list []
+  while [true] [
+
+  ask patchpages  [ set new-rank 0 ]
+
+    ask patchpages
+    [
+      ifelse any? out-linkpatchpage-neighbors
+      [
+        ;; if a node has any out-links divide current rank
+        ;; equally among them.
+        let rank-increment rank / count out-linkpatchpage-neighbors
+        ask out-linkpatchpage-neighbors [
+          set new-rank new-rank + rank-increment
+        ]
+      ]
+      [
+        ;; if a node has no out-links divide current
+        ;; rank equally among all the nodes
+        let rank-increment rank / count patchpages
+        ask patchpages [
+          set new-rank new-rank + rank-increment
+        ]
+      ]
+    ]
+
+    ask patchpages
+    [
+      ;; set current rank to the new-rank and take the damping-factor into account
+      set rank (1 - damping-factor) / count patchpages + damping-factor * new-rank
+    ]
+    let prior-patch-page-rank-list patch-page-rank-list
+
+    ifelse length prior-patch-page-rank-list = 0 [
+      let temp-patch-page-rank-list []
+      ask patchpages [set temp-patch-page-rank-list insert-item 0 temp-patch-page-rank-list rank
+        set who-patch-page-rank-list  insert-item 0 who-patch-page-rank-list who
+      ]
+      set patch-page-rank-list temp-patch-page-rank-list
+    show "first time:"
+      show "prior-patch-page-rank-list:"
+    show prior-patch-page-rank-list
+      stop
+    ]
+
+    [ if length who-patch-page-rank-list != 0 [
+      let tempT-patch-page-rank-list []
+;      foreach who-patch-page-rank-list [indexh -> set tempT-patch-page-rank-list insert-item 0 tempT-patch-page-rank-list (item 0 [rank] of patchpages with [who = indexh]) ]
+      foreach who-patch-page-rank-list [indexh -> set tempT-patch-page-rank-list insert-item 0 tempT-patch-page-rank-list ([rank] of turtle indexh )]
+      set tempT-patch-page-rank-list reverse tempT-patch-page-rank-list
+
+      set patch-page-rank-list tempT-patch-page-rank-list
+      show "second time:"
+      show "patch-page-rank-list"
+      show patch-page-rank-list
+      ]
+    ]
+
+    show "cal_abs:"
+    show "patch-page-rank-list:"
+    show patch-page-rank-list
+    show "prior-patch-page-rank-list:"
+    show prior-patch-page-rank-list
+    let index  0
+;    let mm abs (prior-patch-page-rank-list - patch-page-rank-list)
+    let sum-abs 0.0
+    foreach patch-page-rank-list [x -> set sum-abs sum-abs + abs (x - item index prior-patch-page-rank-list ) set index index + 1]
+    show "run"
+    show sum-abs
+    if sum-abs  < 0.0001 [stop]
+
+  ]
+
+
+end
+
+to cal-weighted-pagerank-diffusion
+
+    ;; return links and pages to initial state
+;    ask links [ set color gray set thickness 0 ]
+;  set who-patch-page-rank-list []
+  ifelse length patch-page-rank-list = 0 [
+    let temp-patch-page-rank-list []
+    ask patchpages [
+      set temp-patch-page-rank-list insert-item 0 temp-patch-page-rank-list rank
+      set who-patch-page-rank-list  insert-item 0 who-patch-page-rank-list who
+      ]
+    set patch-page-rank-list temp-patch-page-rank-list
+    show "first time:"
+;      show "prior-patch-page-rank-list:"
+;    show patch-page-rank-list
+;      stop
+  ]
+  [
+  while [true] [
+
+  ask patchpages  [ set new-rank 0 ]
+
+    ask patchpages
+    [
+;      show who
+;      ifelse any? out-linkpatchpage-neighbors
+;      out-link-list
+      ifelse length out-link-list != 0
+      [
+        ;; if a node has any out-links divide current rank
+        ;; equally among them.
+        let rank-increment rank / sum out-link-list-count
+;        let rank-increment rank / count out-linkpatchpage-neighbors
+        let here-out-link-list-count out-link-list-count
+        let index-h 0
+        foreach out-link-list [x ->
+;          ask patchpages with [who = x][set new-rank (new-rank + rank-increment * (item index-h here-out-link-list-count)) ]
+            ask turtle x [set new-rank (new-rank + rank-increment * (item index-h here-out-link-list-count)) ]
+          set index-h index-h + 1]
+;          set new-rank new-rank + rank-increment
+
+      ]
+      [
+        ifelse any? in-linkpatchpage-neighbors [
+        ;; if a node has no out-links divide current
+        ;; rank equally among all the nodes
+        let rank-increment rank / count patchpages
+            ask patchpages with [any? in-linkpatchpage-neighbors or any? out-linkpatchpage-neighbors][
+          set new-rank new-rank + rank-increment
+        ]]
+          []
+        ]
+    ]
+
+    ask patchpages
+    [
+      ;; set current rank to the new-rank and take the damping-factor into account
+      set rank (1 - damping-factor) / count patchpages + damping-factor * new-rank
+    ]
+    show "done here"
+    let prior-patch-page-rank-list patch-page-rank-list
+
+;    ifelse length prior-patch-page-rank-list = 0 [
+;      let temp-patch-page-rank-list []
+;      ask patchpages [set temp-patch-page-rank-list insert-item 0 temp-patch-page-rank-list rank
+;        set who-patch-page-rank-list  insert-item 0 who-patch-page-rank-list who
+;      ]
+;      set patch-page-rank-list temp-patch-page-rank-list
+;    show "first time:"
+;;      show "prior-patch-page-rank-list:"
+;;    show patch-page-rank-list
+;;      stop
+;    ]
+
+;    [ if length who-patch-page-rank-list != 0 [
+      let tempT-patch-page-rank-list []
+;      foreach who-patch-page-rank-list [indexh -> set tempT-patch-page-rank-list insert-item 0 tempT-patch-page-rank-list (item 0 [rank] of patchpages with [who = indexh]) ]
+      foreach who-patch-page-rank-list [indexh -> set tempT-patch-page-rank-list insert-item 0 tempT-patch-page-rank-list [rank] of turtle indexh]
+      set tempT-patch-page-rank-list reverse tempT-patch-page-rank-list
+
+      set patch-page-rank-list tempT-patch-page-rank-list
+      show "second time:"
+;      show "patch-page-rank-list"
+;      show patch-page-rank-list
+;      ]
+;    ]
+
+;    show "cal_abs:"
+;    show "patch-page-rank-list:"
+;    show patch-page-rank-list
+;    show "prior-patch-page-rank-list:"
+;    show prior-patch-page-rank-list
+    let index  0
+;    let mm abs (prior-patch-page-rank-list - patch-page-rank-list)
+    let sum-abs 0.0
+;    if length prior-patch-page-rank-list != 0[
+    foreach patch-page-rank-list [x -> set sum-abs sum-abs + abs (x - item index prior-patch-page-rank-list ) set index index + 1]
+    show "run"
+      show sum-abs
+;  ]
+    if sum-abs  < 0.0001 [stop]
+
+  ]
+  ]
+
+end
+
+to hide-page-links
+  ask linkpatchpages [hide-link]
+end
+
+to show-page-links
+  ask linkpatchpages [show-link]
+end
+
+to hide-pages
+  ask patchpages [hide-turtle]
+end
+
+to show-pages
+  ask patchpages [show-turtle]
+end
+
+to hide-building-label
+  ask builds [set label ""]
+end
+to show-building-label
+  ask builds [set label build-degree]
+end
+to hide-observedfootprints
+  ask groundprints [ hide-turtle ]
+end
+to show-observedfootprints
+  ask groundprints [ show-turtle ]
+end
+to hide-observedlawns
+  ask groundlawns [ hide-turtle ]
+end
+
+to show-observedlawns
+  ask groundlawns [ show-turtle ]
+end
+
+  ;;;;;;;;;;;;;Plot Part:;;;;;;;;;;;;;;;;;;;;;;;;;
+to plot-build-visits
+;  if ticks mod 50 = 0 [
+  clear-all-plots
+
+  let fv []
+  ask builds [set fv insert-item 0 fv frq-visited]
+  set fv sort-by > fv
+;  set-histogram-num-bars length bd
+;  show "Building degree"
+;  show bd
+  let index-h 0
+  foreach fv [
+;    show index-h
+;    show item index-h bd
+    set-current-plot "#Visits of buildings"
+;    clear-plot
+    plotxy index-h item index-h fv
+    set-current-plot "Log #visits of buildings"
+;    clear-plot
+    let new-i index-h + 1
+    let log-y item index-h fv
+    if log-y != 0 [
+      plotxy log new-i 10 log log-y 10
+    ]
+    set index-h index-h + 1
+
+  ]
+end
+
+to plot-routes
+  clear-plot
+  if ticks mod 50 = 0 [
+;  clear-all-plots
+;  set-current-plot "Routes value"
+
+  set rv []
+  ask patches with [is-building? != true] [set rv insert-item 0 rv route ]
+  set rv sort-by > rv
+;  show rv
+
+  let index-h 0
+  foreach rv [
+      set-current-plot "Routes value"
+;clear-plot
+;      set-current-plot-pen "rv-pen"
+      plotxy index-h item index-h rv
+;      set-current-plot-pen "rv-log-pen"
+
+      set-current-plot "Routes Value Log"
+;clear-plot
+      let new-i index-h + 1
+      let log-y item index-h rv
+      if log-y != 0 [
+        plotxy log new-i 10 log log-y 10]
+  set index-h index-h + 1]
+  ]
+
+;  let fv []
+;  ask builds [set fv insert-item 0 fv frq-visited]
+;  set fv sort-by > fv
+;;  set-histogram-num-bars length bd
+;;  show "Building degree"
+;;  show bd
+;  let index-h2 0
+;  foreach fv [
+;;    show index-h
+;;    show item index-h bd
+;    set-current-plot "#Visits of buildings"
+;;    clear-plot
+;    plotxy index-h2 item index-h2 fv
+;    set-current-plot "Log #visits of buildings"
+;;    clear-plot
+;    let new-i index-h2 + 1
+;    let log-y item index-h2 fv
+;    if log-y != 0 [
+;      plotxy log new-i 10 log log-y 10
+;    ]
+;    set index-h2 index-h2 + 1
+;
+;  ]
+end
+
+to test-who
+  ask one-of patchpages
+    [  show "father_who:" show who
+;      ifelse any? out-linkpatchpage-neighbors
+;      out-link-list
+      ifelse any? out-linkpatchpage-neighbors
+      [
+        ;; if a node has any out-links divide current rank
+        ;; equally among them.
+;        let rank-increment rank / sum out-link-list-count
+        let rank-increment rank / count out-linkpatchpage-neighbors
+        ask out-linkpatchpage-neighbors [
+          show "son_who" show who
+          let index-h 0
+;          foreach out-link-list [x -> if x = who ]
+          set new-rank new-rank + rank-increment
+        ]
+      ]
+      [
+        ;; if a node has no out-links divide current
+        ;; rank equally among all the nodes
+        let rank-increment rank / count patchpages
+        ask patchpages [
+          set new-rank new-rank + rank-increment
+        ]
+      ]
+    ]
+end
+@#$#@#$#@
+GRAPHICS-WINDOW
+254
+4
+662
+413
+-1
+-1
+4.0
+1
+20
+1
+1
+1
+0
+0
+0
+1
+0
+99
+0
+99
+1
+1
+1
+ticks
+30.0
+
+BUTTON
+179
+20
+242
+53
+NIL
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+INPUTBOX
+13
+75
+168
+135
+number-of-agents
+100.0
+1
+0
+Number
+
+BUTTON
+178
+57
+241
+90
+NIL
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+INPUTBOX
+1971
+682
+2126
+742
+leader-wiggle-angle
+100.0
+1
+0
+Number
+
+INPUTBOX
+14
+140
+169
+200
+num-building
+16.0
+1
+0
+Number
+
+SLIDER
+18
+305
+190
+338
+head-angle-max
+head-angle-max
+0
+180
+120.0
+1
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+11
+10
+166
+70
+num-ticks
+10000.0
+1
+0
+Number
+
+SLIDER
+17
+341
+189
+374
+head-distance
+head-distance
+0
+20
+10.0
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+1986
+32
+2138
+65
+building-network?
+building-network?
+0
+1
+-1000
+
+CHOOSER
+1986
+72
+2124
+117
+network-type
+network-type
+"random" "small-world" "preferential" "KE" "evenly-random"
+0
+
+SLIDER
+1987
+124
+2159
+157
+network-param
+network-param
+1
+20
+5.0
+0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1987
+163
+2159
+196
+mu
+mu
+0
+1
+0.97
+0.01
+1
+NIL
+HORIZONTAL
+
+CHOOSER
+2244
+392
+2382
+437
+bg-color
+bg-color
+0 5
+1
+
+BUTTON
+173
+95
+248
+128
+go once
+go
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+PLOT
+682
+250
+882
+400
+Footprints
+Rank
+Footprint value
+0.0
+0.0
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"rv-pen" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\n  clear-plot\n  set rv []\n  ;ask patches with [is-building? != true and route != 0] [set rv insert-item 0 rv route ]\n  ask patches with [route != 0] [set rv insert-item 0 rv route ]\n  set rv sort-by > rv\n  let index-h 0\n  foreach rv [\n      plotxy index-h item index-h rv\n  set index-h index-h + 1]\n  \n  ]"
+
+PLOT
+883
+251
+1083
+401
+Log Routes Value 
+Log(x)
+Log(Pro(X>x))
+0.0
+1.5
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  \n  let routes-here [route] of patches with [route > 0]\n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  while [degree < max-route] [\n  let matches patches with [route > degree]\n  if count matches > 1\n    [ plotxy log degree 10\n             log (count matches / length routes-here) 10 ]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+PLOT
+1979
+257
+2179
+407
+Building degree
+NIL
+NIL
+0.0
+20.0
+0.0
+5.0
+true
+false
+"" ""
+PENS
+"default" 1.0 1 -16777216 true "" "let max-degree max [count linkbuild-neighbors] of builds\nplot-pen-reset  ;; erase what we plotted before\n;set-plot-y-range 1 (max-degree + 1)  ;; + 1 to make room for the width of the last bar\n;set-plot-x-range 0 (count builds / 2)\nhistogram [count linkbuild-neighbors] of builds"
+
+PLOT
+1309
+308
+1469
+428
+#Visits of hotspots
+#visits
+Pro(X>x)
+100.0
+10.0
+0.0
+1.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "  clear-plot\n  ;let fv []\n  ;ask builds [set fv insert-item 0 fv frq-visited]\n  ;set fv sort-by > fv\n  ;let index-h 0\n  ;foreach fv [\n  ;  plotxy index-h item index-h fv\n\n  ;  set index-h index-h + 1\n\n  ;]\n  \n  \n  let visit-here [frq-visited] of builds with [frq-visited > 0]\n  if length visit-here > 0 [\n  let max-visit max visit-here\n  let min-visit min visit-here\n  let sum-visit sum visit-here\n  \n  let degree min-visit\n  while [degree < max-visit] [\n  let matches builds with [frq-visited >= degree]\n  let sum-here sum [frq-visited] of matches\n  if count matches > 1\n    [ plotxy degree\n             ;sum-here / sum-visit\n             (count matches) / length visit-here \n             ]\n  set degree degree + (max-visit - min-visit) / 100\n]\n  ]"
+
+PLOT
+1309
+431
+1469
+551
+Log #visits of hotspot
+Log(#visits)
+Log(Pro(X>x))
+10.0
+1.0
+2.0
+-5.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "  clear-plot\n  ;let fv []\n  ;ask builds [set fv insert-item 0 fv frq-visited]\n  ;set fv sort-by > fv\n\n  ;let index-h 0\n  ;foreach fv [\n  ;  let new-i index-h + 1\n  ;  let log-y item index-h fv\n  ;  if log-y != 0 [\n  ;    plotxy log new-i 10 log log-y 10\n  ;  ]\n  ;  set index-h index-h + 1\n\n  ;]\n  \n  \n  let visit-here [frq-visited] of builds with [frq-visited > 0]\n  if length visit-here > 0 [\n  let max-visit max visit-here\n  let min-visit min visit-here\n  let sum-visit sum visit-here\n  \n  let degree min-visit\n  while [degree < max-visit] [\n  let matches builds with [frq-visited > degree]\n  let sum-here sum [frq-visited] of matches\n  if count matches > 1\n    [ plotxy log degree 10\n             log (count matches / length visit-here ) 10 \n             ;log (sum-here / sum-visit) 10\n             ]\n  set degree degree + (max-visit - min-visit) / 100\n]\n  ]"
+
+PLOT
+1106
+309
+1306
+552
+#Visits and degree of hotspots
+#Visits of hotspots
+degree of  hotspots
+0.0
+1.0
+20.0
+1.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "  clear-plot\n  ;let frq-visited-l []\n  ;let build-degree-l []\n  let data-correlation []\n  ask builds [plotxy frq-visited build-degree \n  set data-correlation insert-item 0 data-correlation (list frq-visited build-degree)\n  ;set frq-visited-l insert-item 0 frq-visited-l frq-visited\n  ;set build-degree-l insert-item 0 build-degree-l build-degree \n  ]\n  let tbl stats:newtable-from-row-list data-correlation\n  let cor-list stats:correlation tbl\n  ;show cor-list\n  set indicator-frq-degree item 0 item 1 cor-list"
+
+BUTTON
+323
+421
+435
+454
+Hide Hotspots
+hide-buildings
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+322
+459
+436
+492
+Show Hotspots
+show-buildings
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+2257
+585
+2381
+618
+route-decay
+route-decay
+1
+1
+-1000
+
+SLIDER
+2288
+622
+2460
+655
+decay-rate-route
+decay-rate-route
+0
+0.9
+0.9
+0.001
+1
+NIL
+HORIZONTAL
+
+SLIDER
+17
+379
+189
+412
+speed
+speed
+1
+20
+1.0
+1
+1
+NIL
+HORIZONTAL
+
+MONITOR
+608
+599
+679
+644
+Ht-index
+ht-index
+17
+1
+11
+
+MONITOR
+607
+648
+679
+693
+NIL
+CRG-index
+3
+1
+11
+
+PLOT
+2484
+578
+2668
+728
+Index change
+NIL
+value
+0.0
+10.0
+10.0
+1.0
+true
+true
+"" ""
+PENS
+"ht-index" 1.0 0 -14835848 true "" "plotxy ticks ht-index\n"
+"CRG-index" 1.0 0 -13345367 true "" "plotxy ticks CRG-index\n"
+"Average" 1.0 0 -2674135 true "" "plotxy ticks (CRG-index + ht-index) / 2.0 "
+
+SWITCH
+2257
+658
+2390
+691
+route-decay-auto
+route-decay-auto
+1
+1
+-1000
+
+PLOT
+884
+426
+1084
+576
+Log Travel Distance
+Log(x: Distance)
+Log(Pro(X>x))
+0.0
+0.0
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  \n  let routes-here travel-length-list\n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  while [degree < max-route] [\n  let count-here 0\n  foreach routes-here [ x -> if x > degree [set count-here count-here + 1] ]\n  \n  if count-here > 0 and degree > 0\n    [ plotxy log degree 10\n             log (count-here / length routes-here) 10 ]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+BUTTON
+936
+74
+1040
+107
+NIL
+save-building
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+INPUTBOX
+777
+10
+1040
+70
+building-path
+hotspots_campus.csv
+1
+0
+String
+
+BUTTON
+1045
+10
+1146
+43
+NIL
+load-building
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+777
+72
+834
+117
+#build
+num-building-fromfile
+17
+1
+11
+
+BUTTON
+1045
+46
+1147
+79
+NIL
+unload-building
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+INPUTBOX
+1563
+269
+1841
+329
+portals-agent-path
+F:\\task_pool\\ABM\\GeneratedFiles\\myfile2.csv
+1
+0
+String
+
+MONITOR
+1665
+328
+1722
+373
+#portal
+num-portal-fromfile
+17
+1
+11
+
+PLOT
+894
+670
+1089
+815
+Log Travel Angle Change
+Log(angle-degree)
+Log(Pro(X>=x))
+0.0
+0.0
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  let routes-here []\n  \n  foreach angle-change-list [ x -> if x >= 1 [set routes-here insert-item 0 routes-here x ] ]\n \n  \n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  \n  while [degree < max-route] [\n  let count-here 0\n  foreach routes-here [ x -> if x > degree [set count-here count-here + 1] ]\n  \n  if count-here > 0 and degree > 0\n    [ plotxy log degree 10\n             log (count-here / length routes-here) 10 ]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+SLIDER
+1988
+206
+2160
+239
+damping-factor
+damping-factor
+0
+1
+0.85
+0.01
+1
+NIL
+HORIZONTAL
+
+MONITOR
+2180
+506
+2237
+551
+NIL
+hit-ratio
+3
+1
+11
+
+PLOT
+1976
+505
+2176
+655
+hit-ratio
+tick
+NIL
+0.0
+10.0
+0.0
+1.0
+true
+false
+"" ""
+PENS
+"Hit" 1.0 0 -16777216 true "" "plotxy ticks hit-ratio\n"
+
+PLOT
+2417
+392
+2617
+542
+Ratio of patchs' route 
+rank
+ratio
+0.0
+10.0
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 500 = 0 [\n  clear-plot\n  set route-ratio-list []\n  ;ask patches with [is-building? != true and route != 0] [set rv insert-item 0 rv route ]\n  ask patches with [route != 0] [set route-ratio-list insert-item 0 route-ratio-list (route / (speed * number-of-agents * ticks)) ]\n  set route-ratio-list sort-by > route-ratio-list\n  let index-h 0\n  foreach route-ratio-list [\n      plotxy index-h item index-h route-ratio-list\n  set index-h index-h + 1]\n  \n  ]"
+
+PLOT
+2630
+393
+2830
+543
+Log Ratio of patchs' route
+Log(x)
+Log(Pro(X>=x))
+0.0
+0.1
+0.0
+0.1
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 500 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  \n  let routes-here [route] of patches with [route > 0]\n  let dividen speed * number-of-agents * ticks\n  let routes-here-new map [ i -> i / dividen] routes-here \n  if length routes-here-new > 0 [\n  let max-route max routes-here-new\n  let min-route min routes-here-new\n  \n  let degree min-route\n  while [degree < max-route] [\n  let matches patches with [(route / dividen) > degree]\n  if count matches > 1\n    [ plotxy log degree 10\n             log (count matches / length routes-here-new) 10 ]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+MONITOR
+1237
+486
+1296
+531
+R-square
+indicator-frq-degree
+4
+1
+11
+
+PLOT
+681
+426
+881
+576
+Travel Distance
+distance
+Pro(X>x)
+0.0
+10.0
+0.0
+1.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  \n  let routes-here travel-length-list\n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  while [degree < max-route] [\n  let count-here 0\n  foreach routes-here [ x -> if x > degree [set count-here count-here + 1] ]\n  \n  if count-here > 0 and degree > 0\n    [ plotxy  degree\n              count-here / length routes-here]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+PLOT
+689
+670
+889
+814
+Angle-changes of travels
+angle-degree
+Pro(X>x)
+0.0
+0.0
+0.0
+1.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  let routes-here []\n  \n  foreach angle-change-list [ x -> if x > 0 [set routes-here insert-item 0 routes-here x ] ]\n \n  \n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  \n  while [degree < max-route] [\n  let count-here 0\n  foreach routes-here [ x -> if x >= degree [set count-here count-here + 1] ]\n  \n  if count-here > 0 and degree > 0\n    [ plotxy degree\n             count-here / length routes-here]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+PLOT
+1111
+619
+1311
+769
+Distance-difference
+distance-difference
+Pro(X>x)
+0.0
+10.0
+0.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 2 -16777216 true "" "if ticks mod 50 = 0 [\nclear-plot\n;set rv []\n  ;;ask patches with [is-building? != true and route > 0] [set rv insert-item 0 rv route ]\n  ;ask patches with [route > 0] [set rv insert-item 0 rv route ]\n\n  ;set rv sort-by > rv\n  ;let index-h 0\n  ;foreach rv [\n   \n  ;    let new-i index-h + 1\n  ;    let log-y item index-h rv\n  ;    ;if log-y != 0 [\n  ;      plotxy log new-i 10 log log-y 10\n  ;      ;]\n  ;set index-h index-h + 1]\n  \n  let routes-here travel-length-difference-list\n  if length routes-here > 0 [\n  let max-route max routes-here\n  let min-route min routes-here\n  \n  let degree min-route\n  while [degree < max-route] [\n  let count-here 0\n  foreach routes-here [ x -> if x > degree [set count-here count-here + 1] ]\n  \n  if count-here > 0 and degree > 0\n    [ plotxy  degree\n              count-here / length routes-here]\n  set degree degree + (max-route - min-route) / 100\n]\n  ]\n  ]"
+
+PLOT
+1312
+619
+1512
+769
+mean-distance-difference
+ticks
+mean-distance-difference
+0.0
+10.0
+100.0
+0.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "if length travel-length-difference-list > 0 [\nplotxy ticks precision (sum travel-length-difference-list / length travel-length-difference-list) 2\n]\n"
+
+CHOOSER
+2254
+773
+2413
+818
+import-vector-data-type
+import-vector-data-type
+"hotspots" "buildings" "portals" "streets"
+3
+
+BUTTON
+2254
+821
+2350
+854
+NIL
+import-data
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+2353
+822
+2453
+855
+NIL
+display-data
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+2427
+778
+2541
+811
+label-show
+label-show
+1
+1
+-1000
+
+BUTTON
+2457
+823
+2598
+856
+NIL
+create-cut-buildings
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+485
+421
+603
+454
+Hide Labels
+hide-building-label
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+485
+461
+602
+494
+Show Labels
+show-building-label
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+1979
+420
+2083
+453
+import-raster
+import-raster
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+1710
+375
+1838
+408
+off-portals
+off-portals
+1
+1
+-1000
+
+CHOOSER
+1569
+374
+1707
+419
+agent-position
+agent-position
+"building" "portal" "random"
+0
+
+BUTTON
+1566
+332
+1658
+365
+NIL
+load-portal
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+339
+683
+459
+716
+render-patch-ht
+render-patch
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+15
+465
+187
+498
+sidewalks
+sidewalks
+0
+255
+255.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+503
+188
+536
+parking-areas
+parking-areas
+0
+255
+120.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+616
+188
+649
+barriers
+barriers
+0
+255
+3.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+576
+188
+609
+lawns
+lawns
+0
+255
+15.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+17
+656
+189
+689
+roads
+roads
+0
+255
+2.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+17
+697
+189
+730
+buildings
+buildings
+0
+255
+0.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+539
+188
+572
+side-roads
+side-roads
+0
+255
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+78
+734
+187
+767
+comfirm difficulties
+confirm-difficulty-values
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+463
+682
+596
+715
+render-patch-even
+render-patch-normal
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+TEXTBOX
+11
+283
+161
+302
+Agents' Behaviour:
+15
+0.0
+1
+
+TEXTBOX
+10
+439
+160
+458
+Difficulty Preset:
+15
+0.0
+0
+
+INPUTBOX
+777
+127
+1065
+195
+world-plot-path
+plots_campus.png
+1
+0
+String
+
+TEXTBOX
+1496
+352
+1646
+371
+Others...
+15
+0.0
+1
+
+TEXTBOX
+690
+226
+856
+264
+Footprints of patches:
+14
+0.0
+1
+
+TEXTBOX
+680
+27
+830
+46
+Input/Output:
+15
+0.0
+1
+
+TEXTBOX
+1117
+599
+1351
+637
+Difference of travel distance:
+14
+0.0
+1
+
+TEXTBOX
+684
+406
+834
+425
+Travel distances:
+14
+0.0
+1
+
+TEXTBOX
+1111
+286
+1261
+305
+Hotspot visitations:
+14
+0.0
+1
+
+TEXTBOX
+698
+647
+872
+685
+Angle-changes of travels:
+14
+0.0
+1
+
+TEXTBOX
+671
+203
+821
+222
+Simulation Statistics:
+15
+0.0
+1
+
+MONITOR
+195
+579
+269
+624
+vision-area
+3.1415926 / 360 * head-angle-max * head-distance * head-distance * 4
+2
+1
+11
+
+INPUTBOX
+1170
+14
+1439
+74
+observed-footprints
+observedfootprints_campus.csv
+1
+0
+String
+
+BUTTON
+1266
+79
+1436
+112
+NIL
+load-observed-footprints
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+314
+503
+444
+536
+NIL
+hide-observedfootprints
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+314
+547
+446
+580
+NIL
+show-observedfootprints
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+1522
+451
+1675
+496
+NIL
+observed-footprints-buffer0
+2
+1
+11
+
+MONITOR
+1527
+603
+1676
+648
+NIL
+observed-footprints-buffer4
+2
+1
+11
+
+MONITOR
+1527
+651
+1678
+696
+NIL
+observed-footprints-buffer8
+2
+1
+11
+
+PLOT
+1099
+124
+1299
+274
+observed-footprints buffers
+ticks
+NIL
+0.0
+10.0
+0.0
+-1.0
+true
+true
+"" ""
+PENS
+"buffer0" 1.0 0 -2674135 true "" "plotxy ticks observed-footprints-buffer0"
+"buffer1" 1.0 0 -13840069 true "" "plotxy ticks observed-footprints-buffer1"
+"buffer2" 1.0 0 -13345367 true "" "plotxy ticks observed-footprints-buffer2"
+
+MONITOR
+1397
+773
+1510
+818
+NIL
+moving-difference
+2
+1
+11
+
+INPUTBOX
+1546
+12
+1781
+72
+lawn-mask
+lawn_campus.csv
+1
+0
+String
+
+BUTTON
+1661
+77
+1778
+110
+NIL
+load-lawn-mask
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+479
+506
+636
+539
+NIL
+hide-observedlawns
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+482
+543
+630
+576
+NIL
+show-observedlawns
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+1698
+451
+1874
+496
+NIL
+observed-lawns-excepetbuffer0
+2
+1
+11
+
+MONITOR
+495
+794
+656
+839
+NIL
+last-patch-value-mean
+2
+1
+11
+
+BUTTON
+1439
+79
+1594
+112
+NIL
+update-groundprint-buffers
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+1704
+601
+1874
+646
+NIL
+observed-lawns-excepetbuffer4
+2
+1
+11
+
+MONITOR
+1705
+650
+1875
+695
+NIL
+observed-lawns-excepetbuffer8
+2
+1
+11
+
+MONITOR
+1523
+502
+1671
+547
+NIL
+observed-footprints-buffer1
+2
+1
+11
+
+MONITOR
+1526
+553
+1677
+598
+NIL
+observed-footprints-buffer2
+2
+1
+11
+
+MONITOR
+1528
+702
+1683
+747
+NIL
+observed-footprints-buffer16
+2
+1
+11
+
+MONITOR
+1699
+504
+1874
+549
+NIL
+observed-lawns-excepetbuffer1
+2
+1
+11
+
+MONITOR
+1702
+553
+1874
+598
+NIL
+observed-lawns-excepetbuffer2
+2
+1
+11
+
+MONITOR
+1704
+702
+1877
+747
+NIL
+observed-lawns-excepetbuffer16
+2
+1
+11
+
+MONITOR
+1530
+768
+1691
+813
+NIL
+emergenced-path-on-lawns-ui
+4
+1
+11
+
+MONITOR
+495
+741
+655
+786
+second-last-patch-value-mean
+second-last-patch-value-mean
+2
+1
+11
+
+MONITOR
+1888
+449
+1945
+494
+A0
+observed-footprints-buffer0 * (1 - observed-lawns-excepetbuffer0)
+2
+1
+11
+
+MONITOR
+1885
+505
+1946
+550
+A1
+observed-footprints-buffer1 * (1 - observed-lawns-excepetbuffer1)
+2
+1
+11
+
+MONITOR
+1888
+554
+1945
+599
+A2
+observed-footprints-buffer2 * (1 - observed-lawns-excepetbuffer2)
+2
+1
+11
+
+MONITOR
+1889
+601
+1946
+646
+A4
+observed-footprints-buffer4 * (1 - observed-lawns-excepetbuffer4)
+2
+1
+11
+
+MONITOR
+1890
+650
+1947
+695
+A8
+observed-footprints-buffer8 * (1 - observed-lawns-excepetbuffer8)
+2
+1
+11
+
+MONITOR
+1891
+702
+1948
+747
+A16
+observed-footprints-buffer16 * (1 - observed-lawns-excepetbuffer16)
+2
+1
+11
+
+MONITOR
+1431
+169
+1707
+214
+NIL
+observed-footprints-buffer4_secondmeanvalue
+2
+1
+11
+
+MONITOR
+1432
+216
+1708
+261
+NIL
+observed-footprints-buffer8_secondmeanvalue
+2
+1
+11
+
+TEXTBOX
+1786
+20
+1936
+38
+lawns_shrink.csv
+11
+0.0
+1
+
+@#$#@#$#@
+## WHAT IS IT?
+
+(a general understanding of what the model is trying to show or explain)
+
+## HOW IT WORKS
+
+(what rules the agents use to create the overall behavior of the model)
+
+## HOW TO USE IT
+
+(how to use the model, including a description of each of the items in the Interface tab)
+
+## THINGS TO NOTICE
+
+(suggested things for the user to notice while running the model)
+
+## THINGS TO TRY
+
+(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+
+## EXTENDING THE MODEL
+
+(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+
+## NETLOGO FEATURES
+
+(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+
+## RELATED MODELS
+
+(models in the NetLogo Models Library and elsewhere which are of related interest)
+
+## CREDITS AND REFERENCES
+
+(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+@#$#@#$#@
+default
+true
+0
+Polygon -7500403 true true 150 5 40 250 150 205 260 250
+
+airplane
+true
+0
+Polygon -7500403 true true 150 0 135 15 120 60 120 105 15 165 15 195 120 180 135 240 105 270 120 285 150 270 180 285 210 270 165 240 180 180 285 195 285 165 180 105 180 60 165 15
+
+arrow
+true
+0
+Polygon -7500403 true true 150 0 0 150 105 150 105 293 195 293 195 150 300 150
+
+box
+false
+0
+Polygon -7500403 true true 150 285 285 225 285 75 150 135
+Polygon -7500403 true true 150 135 15 75 150 15 285 75
+Polygon -7500403 true true 15 75 15 225 150 285 150 135
+Line -16777216 false 150 285 150 135
+Line -16777216 false 150 135 15 75
+Line -16777216 false 150 135 285 75
+
+bug
+true
+0
+Circle -7500403 true true 96 182 108
+Circle -7500403 true true 110 127 80
+Circle -7500403 true true 110 75 80
+Line -7500403 true 150 100 80 30
+Line -7500403 true 150 100 220 30
+
+butterfly
+true
+0
+Polygon -7500403 true true 150 165 209 199 225 225 225 255 195 270 165 255 150 240
+Polygon -7500403 true true 150 165 89 198 75 225 75 255 105 270 135 255 150 240
+Polygon -7500403 true true 139 148 100 105 55 90 25 90 10 105 10 135 25 180 40 195 85 194 139 163
+Polygon -7500403 true true 162 150 200 105 245 90 275 90 290 105 290 135 275 180 260 195 215 195 162 165
+Polygon -16777216 true false 150 255 135 225 120 150 135 120 150 105 165 120 180 150 165 225
+Circle -16777216 true false 135 90 30
+Line -16777216 false 150 105 195 60
+Line -16777216 false 150 105 105 60
+
+car
+false
+0
+Polygon -7500403 true true 300 180 279 164 261 144 240 135 226 132 213 106 203 84 185 63 159 50 135 50 75 60 0 150 0 165 0 225 300 225 300 180
+Circle -16777216 true false 180 180 90
+Circle -16777216 true false 30 180 90
+Polygon -16777216 true false 162 80 132 78 134 135 209 135 194 105 189 96 180 89
+Circle -7500403 true true 47 195 58
+Circle -7500403 true true 195 195 58
+
+circle
+false
+0
+Circle -7500403 true true 0 0 300
+
+circle 2
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+
+cow
+false
+0
+Polygon -7500403 true true 200 193 197 249 179 249 177 196 166 187 140 189 93 191 78 179 72 211 49 209 48 181 37 149 25 120 25 89 45 72 103 84 179 75 198 76 252 64 272 81 293 103 285 121 255 121 242 118 224 167
+Polygon -7500403 true true 73 210 86 251 62 249 48 208
+Polygon -7500403 true true 25 114 16 195 9 204 23 213 25 200 39 123
+
+cylinder
+false
+0
+Circle -7500403 true true 0 0 300
+
+dot
+false
+0
+Circle -7500403 true true 90 90 120
+
+face happy
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 255 90 239 62 213 47 191 67 179 90 203 109 218 150 225 192 218 210 203 227 181 251 194 236 217 212 240
+
+face neutral
+false
+0
+Circle -7500403 true true 8 7 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Rectangle -16777216 true false 60 195 240 225
+
+face sad
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 168 90 184 62 210 47 232 67 244 90 220 109 205 150 198 192 205 210 220 227 242 251 229 236 206 212 183
+
+fish
+false
+0
+Polygon -1 true false 44 131 21 87 15 86 0 120 15 150 0 180 13 214 20 212 45 166
+Polygon -1 true false 135 195 119 235 95 218 76 210 46 204 60 165
+Polygon -1 true false 75 45 83 77 71 103 86 114 166 78 135 60
+Polygon -7500403 true true 30 136 151 77 226 81 280 119 292 146 292 160 287 170 270 195 195 210 151 212 30 166
+Circle -16777216 true false 215 106 30
+
+flag
+false
+0
+Rectangle -7500403 true true 60 15 75 300
+Polygon -7500403 true true 90 150 270 90 90 30
+Line -7500403 true 75 135 90 135
+Line -7500403 true 75 45 90 45
+
+flower
+false
+0
+Polygon -10899396 true false 135 120 165 165 180 210 180 240 150 300 165 300 195 240 195 195 165 135
+Circle -7500403 true true 85 132 38
+Circle -7500403 true true 130 147 38
+Circle -7500403 true true 192 85 38
+Circle -7500403 true true 85 40 38
+Circle -7500403 true true 177 40 38
+Circle -7500403 true true 177 132 38
+Circle -7500403 true true 70 85 38
+Circle -7500403 true true 130 25 38
+Circle -7500403 true true 96 51 108
+Circle -16777216 true false 113 68 74
+Polygon -10899396 true false 189 233 219 188 249 173 279 188 234 218
+Polygon -10899396 true false 180 255 150 210 105 210 75 240 135 240
+
+house
+false
+0
+Rectangle -7500403 true true 45 120 255 285
+Rectangle -16777216 true false 120 210 180 285
+Polygon -7500403 true true 15 120 150 15 285 120
+Line -16777216 false 30 120 270 120
+
+leaf
+false
+0
+Polygon -7500403 true true 150 210 135 195 120 210 60 210 30 195 60 180 60 165 15 135 30 120 15 105 40 104 45 90 60 90 90 105 105 120 120 120 105 60 120 60 135 30 150 15 165 30 180 60 195 60 180 120 195 120 210 105 240 90 255 90 263 104 285 105 270 120 285 135 240 165 240 180 270 195 240 210 180 210 165 195
+Polygon -7500403 true true 135 195 135 240 120 255 105 255 105 285 135 285 165 240 165 195
+
+line
+true
+0
+Line -7500403 true 150 0 150 300
+
+line half
+true
+0
+Line -7500403 true 150 0 150 150
+
+pentagon
+false
+0
+Polygon -7500403 true true 150 15 15 120 60 285 240 285 285 120
+
+person
+false
+0
+Circle -7500403 true true 110 5 80
+Polygon -7500403 true true 105 90 120 195 90 285 105 300 135 300 150 225 165 300 195 300 210 285 180 195 195 90
+Rectangle -7500403 true true 127 79 172 94
+Polygon -7500403 true true 195 90 240 150 225 180 165 105
+Polygon -7500403 true true 105 90 60 150 75 180 135 105
+
+plant
+false
+0
+Rectangle -7500403 true true 135 90 165 300
+Polygon -7500403 true true 135 255 90 210 45 195 75 255 135 285
+Polygon -7500403 true true 165 255 210 210 255 195 225 255 165 285
+Polygon -7500403 true true 135 180 90 135 45 120 75 180 135 210
+Polygon -7500403 true true 165 180 165 210 225 180 255 120 210 135
+Polygon -7500403 true true 135 105 90 60 45 45 75 105 135 135
+Polygon -7500403 true true 165 105 165 135 225 105 255 45 210 60
+Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
+
+sheep
+false
+15
+Circle -1 true true 203 65 88
+Circle -1 true true 70 65 162
+Circle -1 true true 150 105 120
+Polygon -7500403 true false 218 120 240 165 255 165 278 120
+Circle -7500403 true false 214 72 67
+Rectangle -1 true true 164 223 179 298
+Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
+Circle -1 true true 3 83 150
+Rectangle -1 true true 65 221 80 296
+Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
+Polygon -7500403 true false 276 85 285 105 302 99 294 83
+Polygon -7500403 true false 219 85 210 105 193 99 201 83
+
+square
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+
+square 2
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+Rectangle -16777216 true false 60 60 240 240
+
+star
+false
+0
+Polygon -7500403 true true 151 1 185 108 298 108 207 175 242 282 151 216 59 282 94 175 3 108 116 108
+
+target
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+Circle -7500403 true true 60 60 180
+Circle -16777216 true false 90 90 120
+Circle -7500403 true true 120 120 60
+
+tree
+false
+0
+Circle -7500403 true true 118 3 94
+Rectangle -6459832 true false 120 195 180 300
+Circle -7500403 true true 65 21 108
+Circle -7500403 true true 116 41 127
+Circle -7500403 true true 45 90 120
+Circle -7500403 true true 104 74 152
+
+triangle
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+
+triangle 2
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+Polygon -16777216 true false 151 99 225 223 75 224
+
+truck
+false
+0
+Rectangle -7500403 true true 4 45 195 187
+Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Rectangle -1 true false 195 60 195 105
+Polygon -16777216 true false 238 112 252 141 219 141 218 112
+Circle -16777216 true false 234 174 42
+Rectangle -7500403 true true 181 185 214 194
+Circle -16777216 true false 144 174 42
+Circle -16777216 true false 24 174 42
+Circle -7500403 false true 24 174 42
+Circle -7500403 false true 144 174 42
+Circle -7500403 false true 234 174 42
+
+turtle
+true
+0
+Polygon -10899396 true false 215 204 240 233 246 254 228 266 215 252 193 210
+Polygon -10899396 true false 195 90 225 75 245 75 260 89 269 108 261 124 240 105 225 105 210 105
+Polygon -10899396 true false 105 90 75 75 55 75 40 89 31 108 39 124 60 105 75 105 90 105
+Polygon -10899396 true false 132 85 134 64 107 51 108 17 150 2 192 18 192 52 169 65 172 87
+Polygon -10899396 true false 85 204 60 233 54 254 72 266 85 252 107 210
+Polygon -7500403 true true 119 75 179 75 209 101 224 135 220 225 175 261 128 261 81 224 74 135 88 99
+
+wheel
+false
+0
+Circle -7500403 true true 3 3 294
+Circle -16777216 true false 30 30 240
+Line -7500403 true 150 285 150 15
+Line -7500403 true 15 150 285 150
+Circle -7500403 true true 120 120 60
+Line -7500403 true 216 40 79 269
+Line -7500403 true 40 84 269 221
+Line -7500403 true 40 216 269 79
+Line -7500403 true 84 40 221 269
+
+wolf
+false
+0
+Polygon -16777216 true false 253 133 245 131 245 133
+Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
+Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
+
+x
+false
+0
+Polygon -7500403 true true 270 75 225 30 30 225 75 270
+Polygon -7500403 true true 30 75 75 30 270 225 225 270
+@#$#@#$#@
+NetLogo 6.1.1
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+<experiments>
+  <experiment name="experiment_campus_20220109_DELL_affordanceQuartic" repetitions="5" runMetricsEveryStep="false">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="3511"/>
+    <exitCondition>ticks &gt; 3510</exitCondition>
+    <metric>observed-footprints-buffer0</metric>
+    <metric>observed-footprints-buffer1</metric>
+    <metric>observed-footprints-buffer2</metric>
+    <metric>observed-footprints-buffer4</metric>
+    <metric>observed-footprints-buffer8</metric>
+    <metric>observed-footprints-buffer16</metric>
+    <metric>emergenced-path-on-lawns</metric>
+    <metric>observed-footprints-buffer0_secondmeanvalue</metric>
+    <metric>observed-footprints-buffer1_secondmeanvalue</metric>
+    <metric>observed-footprints-buffer2_secondmeanvalue</metric>
+    <metric>observed-footprints-buffer4_secondmeanvalue</metric>
+    <metric>observed-footprints-buffer8_secondmeanvalue</metric>
+    <metric>observed-footprints-buffer16_secondmeanvalue</metric>
+    <metric>emergenced-path-on-lawns_secondmeanvalue</metric>
+    <metric>moving-difference</metric>
+    <enumeratedValueSet variable="head-angle-max">
+      <value value="30"/>
+      <value value="60"/>
+      <value value="90"/>
+      <value value="120"/>
+      <value value="150"/>
+      <value value="170"/>
+    </enumeratedValueSet>
+    <steppedValueSet variable="head-distance" first="2" step="2" last="20"/>
+    <enumeratedValueSet variable="speed">
+      <value value="1"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
+@#$#@#$#@
+@#$#@#$#@
+default
+0.0
+-0.2 0 0.0 1.0
+0.0 1 1.0 0.0
+0.2 0 0.0 1.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+@#$#@#$#@
+0
+@#$#@#$#@
